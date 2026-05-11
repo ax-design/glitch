@@ -2,394 +2,721 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Glitch Canvas Example</title>
+    <title>Glitch Canvas Documentation</title>
+    <style>
+        body { font-family: sans-serif; max-width: 1100px; margin: 0 auto; padding: 20px; }
+        h1 { margin-bottom: 0.3em; }
+        h2 { margin-top: 2em; border-bottom: 1px solid #ddd; padding-bottom: 0.3em; }
+        .demo-block { display: flex; border-bottom: #aaa dashed 1px; padding: 16px 0; gap: 24px; }
+        .demo { flex: 0 0 420px; }
+        .demo glitch-canvas { display: inline-block; max-width: 100%; }
+        .code { flex: 1; min-width: 0; }
+        .code pre { background: #f4f4f4; padding: 12px; overflow-x: auto; font-size: 14px; line-height: 1.5; }
+        .hidden-src { display: none; }
+        .controls { margin: 4px 0; }
+        .controls button { margin-right: 4px; }
+    </style>
 </head>
 <body>
-    <h1>Glitch Canvas Demo</h1>
+    <h1>Glitch Canvas</h1>
+    <p>A web component for real-time JPEG glitch art effects with buffer-based playback.</p>
 
-    <h2>Input</h2>
-    <p>Draw on the canvas, drag-drop an image, or load from URL.</p>
-    <canvas id="input" width="480" height="360" style="border:1px solid #000;cursor:crosshair"></canvas>
-    <br>
-    <button id="btn-clear">Clear</button>
-    <br><br>
-    <input id="file-input" type="file" accept="image/*">
-    <button id="btn-load-file">Load File</button>
-    <br>
-    <input id="url-input" type="text" placeholder="https://example.com/photo.jpg" size="50">
-    <button id="btn-load-url">Load URL</button>
-    <span id="load-error" style="color:red"></span>
-
-    <h2>Glitches</h2>
-    <div id="controls"></div>
-    <button id="btn-add">+ Add Glitch</button>
-
-    <h2>Output</h2>
-    <glitch-canvas id="gc" fps="8" buffer-size="4"></glitch-canvas>
-    <br>
-
-    <h3>Playback</h3>
-    <button id="btn-play">Play</button>
-    <button id="btn-pause">Pause</button>
-    <br><br>
-    <button id="btn-download">Download JPG</button>
+    <img id="src-img" src="example.jpg" crossorigin="anonymous" class="hidden-src">
 
     <script src="../build/main.js"></script>
     <script>
         var G = AxGlitch;
         G.register();
 
-        var gc = document.getElementById('gc');
-        var inputCanvas = document.getElementById('input');
-        var ctx = inputCanvas.getContext('2d');
-        var controlsDiv = document.getElementById('controls');
-
-        var TYPES = [
-            { name: 'Chaos', cls: G.ChaosGlitch, supportsMulti: true },
-            { name: 'Quantum', cls: G.QuantumGlitch, supportsMulti: false },
-            { name: 'Width', cls: G.WidthGlitch, supportsMulti: false },
-            { name: 'Huffman', cls: G.HuffmanGlitch, supportsMulti: true },
-            { name: 'Ghost', cls: G.GhostGlitch, supportsMulti: true },
-        ];
-
-        // Each item tracks full state including randomization config
-        var items = [
-            { id: 1, typeIndex: 2, pos: 0, val: 200, multiVal: false, randomizeMode: 'none',
-              valRangeMin: 0, valRangeMax: 254,
-              countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential' },
-            { id: 2, typeIndex: 0, pos: 55.2, val: 200, multiVal: true, randomizeMode: 'both',
-              valRangeMin: 50, valRangeMax: 200,
-              countMin: 3, countMax: 8, spreadMin: 0, spreadMax: 100, distribution: 'random' },
-        ];
-        var nextId = 3;
-
-        // --- Input canvas drawing ---
-        var drawing = false;
-        var lastX = 0, lastY = 0, hue = 0;
-
-        function getPos(e) {
-            var r = inputCanvas.getBoundingClientRect();
-            var cx = (e.clientX || (e.touches && e.touches[0].clientX) || 0);
-            var cy = (e.clientY || (e.touches && e.touches[0].clientY) || 0);
-            return { x: (cx - r.left) * inputCanvas.width / r.width, y: (cy - r.top) * inputCanvas.height / r.height };
+        function playBtn(gc) {
+            var btn = document.createElement('button');
+            btn.textContent = 'Play';
+            btn.onclick = function() { gc.play(); };
+            return btn;
+        }
+        function pauseBtn(gc) {
+            var btn = document.createElement('button');
+            btn.textContent = 'Pause';
+            btn.onclick = function() { gc.pause(); };
+            return btn;
+        }
+        function randomBtn(gc) {
+            var btn = document.createElement('button');
+            btn.textContent = 'Randomize';
+            btn.onclick = function() { gc.randomize(); };
+            return btn;
+        }
+        function dlBtn(gc) {
+            var btn = document.createElement('button');
+            btn.textContent = 'Download';
+            btn.onclick = function() { gc.download(); };
+            return btn;
         }
 
-        inputCanvas.addEventListener('mousedown', function(e) { drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; });
-        inputCanvas.addEventListener('mousemove', function(e) {
-            if (!drawing) return;
-            var p = getPos(e);
-            ctx.strokeStyle = 'hsl(' + hue + ',100%,50%)';
-            ctx.lineWidth = 5; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
-            lastX = p.x; lastY = p.y; hue = (hue + 5) % 360;
-        });
-        inputCanvas.addEventListener('mouseup', function() { if (drawing) { drawing = false; capture(); } });
-        inputCanvas.addEventListener('mouseleave', function() { if (drawing) { drawing = false; capture(); } });
-        inputCanvas.addEventListener('touchstart', function(e) { e.preventDefault(); drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; }, { passive: false });
-        inputCanvas.addEventListener('touchmove', function(e) {
-            e.preventDefault(); if (!drawing) return;
-            var p = getPos(e);
-            ctx.strokeStyle = 'hsl(' + hue + ',100%,50%)';
-            ctx.lineWidth = 5; ctx.lineCap = 'round';
-            ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
-            lastX = p.x; lastY = p.y; hue = (hue + 5) % 360;
-        }, { passive: false });
-        inputCanvas.addEventListener('touchend', function() { if (drawing) { drawing = false; capture(); } });
-
-        // --- Drag & Drop ---
-        inputCanvas.addEventListener('dragover', function(e) { e.preventDefault(); });
-        inputCanvas.addEventListener('drop', function(e) {
-            e.preventDefault();
-            var files = e.dataTransfer && e.dataTransfer.files;
-            if (!files || !files.length) return;
-            var file = files[0];
-            if (!file.type.match('image.*')) return;
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                var img = new Image();
-                img.onload = function() {
-                    var w = img.width, h = img.height;
-                    if (w > 480 || h > 360) { var r = Math.min(480 / w, 360 / h); w *= r; h *= r; }
-                    inputCanvas.width = Math.round(w);
-                    inputCanvas.height = Math.round(h);
-                    ctx.drawImage(img, 0, 0, inputCanvas.width, inputCanvas.height);
-                    capture();
-                };
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-        });
-
-        // --- Load from File ---
-        document.getElementById('btn-load-file').onclick = function() {
-            document.getElementById('file-input').click();
-        };
-        document.getElementById('file-input').onchange = function() {
-            var file = this.files && this.files[0];
-            if (!file) return;
-            var reader = new FileReader();
-            reader.onload = function(ev) {
-                var img = new Image();
-                img.onload = function() {
-                    var w = img.width, h = img.height;
-                    if (w > 480 || h > 360) { var r = Math.min(480 / w, 360 / h); w *= r; h *= r; }
-                    inputCanvas.width = Math.round(w);
-                    inputCanvas.height = Math.round(h);
-                    ctx.drawImage(img, 0, 0, inputCanvas.width, inputCanvas.height);
-                    capture();
-                };
-                img.src = ev.target.result;
-            };
-            reader.readAsDataURL(file);
-        };
-
-        // --- Load from URL ---
-        document.getElementById('btn-load-url').onclick = function() {
-            var url = document.getElementById('url-input').value.trim();
-            var errorEl = document.getElementById('load-error');
-            errorEl.textContent = '';
-            if (!url) return;
-            gc.load(url).then(function() {
-                // Also draw onto input canvas so user can see what was loaded
-                var shadowCanvas = gc.shadowRoot.querySelector('canvas');
-                if (shadowCanvas) {
-                    inputCanvas.width = shadowCanvas.width;
-                    inputCanvas.height = shadowCanvas.height;
-                    ctx.drawImage(shadowCanvas, 0, 0);
-                }
-            }).catch(function(err) {
-                errorEl.textContent = err.message;
-            });
-        };
-
-        // --- Capture & Feed ---
-        function capture() {
-            gc.cloneFrom(inputCanvas);
-            syncGlitches();
+        function addControls(gc) {
+            var div = document.createElement('div');
+            div.className = 'controls';
+            div.appendChild(playBtn(gc));
+            div.appendChild(pauseBtn(gc));
+            div.appendChild(randomBtn(gc));
+            div.appendChild(dlBtn(gc));
+            gc.parentElement.insertBefore(div, gc);
         }
 
-        document.getElementById('btn-clear').onclick = function() {
-            inputCanvas.width = 480; inputCanvas.height = 360;
-            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 480, 360);
-            ctx.font = '18px monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'center';
-            ctx.fillText('Draw Here', 240, 185);
-            capture();
-        };
-
-        // --- Build a GlitchValueCollection from item config ---
-        function buildCollection(item) {
-            var entries = [];
-            var count = Math.floor((item.countMin + item.countMax) / 2);
-            for (var i = 0; i < count; i++) {
-                entries.push({ value: item.val });
-            }
-            var distKey = item.distribution === 'random' ? G.DistributionKind.Random
-                        : item.distribution === 'uniform' ? G.DistributionKind.Uniform
-                        : G.DistributionKind.Sequential;
-            var coll = new G.GlitchValueCollection(entries, distKey);
-            coll.valueRange = { min: item.valRangeMin, max: item.valRangeMax };
-            coll.countRange = { min: item.countMin, max: item.countMax };
-            if (distKey === G.DistributionKind.Random) {
-                coll.spread = { min: item.spreadMin, max: item.spreadMax };
-            }
-            return coll;
-        }
-
-        // --- Build a single GlitchValue with range config ---
-        function buildValue(item) {
-            return new G.GlitchValue(item.val);
-        }
-
-        // --- Sync Glitch Objects to Component ---
-        function syncGlitches() {
-            var glitches = items.map(function(item) {
-                var pos = new G.Position(item.pos);
-                var typeDef = TYPES[item.typeIndex];
-
-                if (typeDef.cls === G.GhostGlitch) {
-                    // Ghost always uses GlitchValueCollection
-                    var coll = buildCollection(item);
-                    return new G.GhostGlitch(pos, new G.Offset(item.val), coll);
-                }
-
-                if (item.multiVal && typeDef.supportsMulti) {
-                    return new typeDef.cls(pos, buildCollection(item));
-                }
-
-                return new typeDef.cls(pos, buildValue(item));
-            });
-
-            glitches.forEach(function(g, i) { g.randomizeMode = items[i].randomizeMode; });
-            gc.setGlitches(glitches);
-            gc.requestRender();
-        }
-
-        // --- Glitch Controls ---
-        function makeField(label, value, min, max, step, onChange) {
-            var span = document.createElement('span');
-            span.textContent = label + ': ' + value + ' ';
-            var input = document.createElement('input');
-            input.type = 'range'; input.min = min; input.max = max; input.step = step || 1; input.value = value;
-            input.style.width = '200px';
-            input.oninput = function() {
-                var v = parseFloat(input.value);
-                span.textContent = label + ': ' + (step && step < 1 ? v.toFixed(1) : v) + ' ';
-                onChange(v);
-            };
-            return [span, input];
-        }
-
-        function renderControls() {
-            controlsDiv.innerHTML = '';
-            items.forEach(function(item, i) {
-                var typeDef = TYPES[item.typeIndex];
-                var div = document.createElement('div');
-                div.style.cssText = 'border:1px solid #999;padding:8px;margin:4px 0';
-
-                // Header row: #N + type select + remove
-                var header = document.createElement('div');
-                var numSpan = document.createElement('span');
-                numSpan.textContent = '#' + (i + 1) + ' ';
-                header.appendChild(numSpan);
-
-                var sel = document.createElement('select');
-                TYPES.forEach(function(t, ti) {
-                    var opt = document.createElement('option');
-                    opt.value = ti; opt.textContent = t.name;
-                    if (ti === item.typeIndex) opt.selected = true;
-                    sel.appendChild(opt);
-                });
-                sel.onchange = function() { item.typeIndex = parseInt(sel.value); renderControls(); syncGlitches(); };
-                header.appendChild(sel);
-
-                var rmBtn = document.createElement('button');
-                rmBtn.textContent = 'Remove';
-                rmBtn.style.marginLeft = '10px';
-                rmBtn.onclick = function() { items = items.filter(function(g) { return g.id !== item.id; }); renderControls(); syncGlitches(); };
-                header.appendChild(rmBtn);
-                div.appendChild(header);
-
-                // Position
-                var posFields = makeField('Pos', item.pos, 0, 100, 0.1, function(v) { item.pos = v; syncGlitches(); });
-                div.appendChild(document.createElement('br'));
-                div.appendChild(posFields[0]); div.appendChild(posFields[1]);
-
-                // Single val display
-                var valFields = makeField('Val', item.val, 0, 255, 1, function(v) { item.val = v; syncGlitches(); });
-                div.appendChild(document.createElement('br'));
-                div.appendChild(valFields[0]); div.appendChild(valFields[1]);
-
-                // Multi-val toggle (only for types that support it, not Ghost which is always multi)
-                if (typeDef.supportsMulti && typeDef.cls !== G.GhostGlitch) {
-                    div.appendChild(document.createElement('br'));
-                    var multiLabel = document.createElement('label');
-                    var multiCheck = document.createElement('input');
-                    multiCheck.type = 'checkbox'; multiCheck.checked = item.multiVal;
-                    multiCheck.onchange = function() { item.multiVal = multiCheck.checked; renderControls(); syncGlitches(); };
-                    multiLabel.appendChild(multiCheck);
-                    multiLabel.appendChild(document.createTextNode(' Multi-val'));
-                    div.appendChild(multiLabel);
-                }
-
-                // Multi-val config section
-                var showMultiConfig = item.multiVal || typeDef.cls === G.GhostGlitch;
-                if (showMultiConfig && typeDef.supportsMulti) {
-                    var cfgDiv = document.createElement('div');
-                    cfgDiv.style.marginTop = '6px';
-                    cfgDiv.appendChild(document.createTextNode('Randomization Config:'));
-
-                    // Randomize mode
-                    cfgDiv.appendChild(document.createTextNode(' Mode: '));
-                    var modeSel = document.createElement('select');
-                    ['none', 'val', 'pos', 'both'].forEach(function(m) {
-                        var opt = document.createElement('option');
-                        opt.value = m; opt.textContent = m;
-                        if (m === item.randomizeMode) opt.selected = true;
-                        modeSel.appendChild(opt);
-                    });
-                    modeSel.onchange = function() { item.randomizeMode = modeSel.value; syncGlitches(); };
-                    cfgDiv.appendChild(modeSel);
-                    cfgDiv.appendChild(document.createElement('br'));
-
-                    // Value range
-                    cfgDiv.appendChild(document.createTextNode('Val range: '));
-                    var vrMin = makeField('Min', item.valRangeMin, 0, 254, 1, function(v) { item.valRangeMin = v; syncGlitches(); });
-                    var vrMax = makeField('Max', item.valRangeMax, 0, 254, 1, function(v) { item.valRangeMax = v; syncGlitches(); });
-                    cfgDiv.appendChild(vrMin[0]); cfgDiv.appendChild(vrMin[1]);
-                    cfgDiv.appendChild(document.createElement('br'));
-                    cfgDiv.appendChild(vrMax[0]); cfgDiv.appendChild(vrMax[1]);
-                    cfgDiv.appendChild(document.createElement('br'));
-
-                    // Count range
-                    cfgDiv.appendChild(document.createTextNode('Count range: '));
-                    var cnMin = makeField('Min', item.countMin, 1, 20, 1, function(v) { item.countMin = v; syncGlitches(); });
-                    var cnMax = makeField('Max', item.countMax, 1, 20, 1, function(v) { item.countMax = v; syncGlitches(); });
-                    cfgDiv.appendChild(cnMin[0]); cfgDiv.appendChild(cnMin[1]);
-                    cfgDiv.appendChild(document.createElement('br'));
-                    cfgDiv.appendChild(cnMax[0]); cfgDiv.appendChild(cnMax[1]);
-                    cfgDiv.appendChild(document.createElement('br'));
-
-                    // Distribution
-                    cfgDiv.appendChild(document.createTextNode('Distribution: '));
-                    var distSel = document.createElement('select');
-                    ['sequential', 'random', 'uniform'].forEach(function(d) {
-                        var opt = document.createElement('option');
-                        opt.value = d; opt.textContent = d;
-                        if (d === item.distribution) opt.selected = true;
-                        distSel.appendChild(opt);
-                    });
-                    distSel.onchange = function() { item.distribution = distSel.value; renderControls(); syncGlitches(); };
-                    cfgDiv.appendChild(distSel);
-
-                    // Spread (only for random distribution)
-                    if (item.distribution === 'random') {
-                        cfgDiv.appendChild(document.createElement('br'));
-                        cfgDiv.appendChild(document.createTextNode('Spread: '));
-                        var spMin = makeField('Min', item.spreadMin, 0, 200, 1, function(v) { item.spreadMin = v; syncGlitches(); });
-                        var spMax = makeField('Max', item.spreadMax, 0, 200, 1, function(v) { item.spreadMax = v; syncGlitches(); });
-                        cfgDiv.appendChild(spMin[0]); cfgDiv.appendChild(spMin[1]);
-                        cfgDiv.appendChild(document.createElement('br'));
-                        cfgDiv.appendChild(spMax[0]); cfgDiv.appendChild(spMax[1]);
+        var autoPlayIds = [];
+        function autoPlayWhenVisible() {
+            var observer = new IntersectionObserver(function(entries) {
+                entries.forEach(function(entry) {
+                    var gc = entry.target;
+                    if (entry.isIntersecting && gc.glitches && gc.glitches.length > 0) {
+                        gc.play();
+                    } else {
+                        gc.pause();
                     }
+                });
+            }, { rootMargin: '50px' });
 
-                    div.appendChild(cfgDiv);
-                }
-
-                controlsDiv.appendChild(div);
+            autoPlayIds.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) observer.observe(el);
             });
         }
+    </script>
 
-        document.getElementById('btn-add').onclick = function() {
-            items.push({
-                id: nextId++, typeIndex: 0, pos: Math.random() * 100, val: Math.floor(Math.random() * 256),
-                multiVal: false, randomizeMode: 'none',
-                valRangeMin: 0, valRangeMax: 254,
-                countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential',
-            });
-            renderControls();
-            syncGlitches();
-        };
+    <!-- ============================================================ -->
+    <h2>1. Registration</h2>
+    <p>Include the build script and call <code>register()</code> to define the custom element.</p>
 
-        // --- Playback ---
-        document.getElementById('btn-play').onclick = function() {
-            gc.play();
-        };
-        document.getElementById('btn-pause').onclick = function() {
-            gc.pause();
-        };
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-empty"></glitch-canvas>
+        </div>
+        <div class="code">
+<pre>&lt;script src="build/main.js"&gt;&lt;/script&gt;
+&lt;script&gt;
+  AxGlitch.register();
+&lt;/script&gt;
 
-        // --- Download ---
-        document.getElementById('btn-download').onclick = function() {
-            gc.download();
-        };
+&lt;glitch-canvas&gt;&lt;/glitch-canvas&gt;</pre>
+            <p>An empty canvas. Load an image to begin.</p>
+        </div>
+    </div>
 
-        // --- Init ---
-        ctx.fillStyle = '#fff';
-        ctx.fillRect(0, 0, 480, 360);
-        ctx.font = '18px monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'center';
-        ctx.fillText('Draw Here', 240, 185);
-        renderControls();
-        capture();
+    <!-- ============================================================ -->
+    <h2>2. Loading Images</h2>
+
+    <h3>2a. <code>src</code> attribute</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-src" src="example.jpg" crossorigin="anonymous" buffer-size="1"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Set <code>src</code> to load an image by URL. The image is fetched via <code>fetch()</code> and requires CORS headers.</p>
+<pre>&lt;glitch-canvas
+  src="example.jpg"
+  crossorigin="anonymous"
+  buffer-size="1"&gt;
+&lt;/glitch-canvas&gt;</pre>
+        </div>
+    </div>
+
+    <h3>2b. <code>load()</code> method</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <div class="controls">
+                <button onclick="document.getElementById('gc-load').load('example.jpg')">Load URL</button>
+            </div>
+            <glitch-canvas id="gc-load" buffer-size="1"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Call <code>load(url)</code> programmatically. Returns a Promise that rejects on network or CORS errors.</p>
+<pre>gc.load('example.jpg')
+  .then(function() { /* ready */ })
+  .catch(function(err) { console.error(err); });</pre>
+        </div>
+    </div>
+
+    <h3>2c. <code>cloneFrom()</code> with <code>&lt;img&gt;</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <div class="controls">
+                <button onclick="document.getElementById('gc-clone-img').cloneFrom(document.getElementById('src-img'))">Clone from img</button>
+            </div>
+            <glitch-canvas id="gc-clone-img" buffer-size="1"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Capture from an existing <code>&lt;img&gt;</code> element:</p>
+<pre>var img = document.getElementById('my-img');
+gc.cloneFrom(img);</pre>
+        </div>
+    </div>
+
+    <h3>2d. <code>cloneFrom()</code> with <code>&lt;canvas&gt;</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <div class="controls">
+                <button onclick="var c=document.getElementById('gc-clone-canvas');c.cloneFrom(document.getElementById('src-img'))">Clone from canvas</button>
+            </div>
+            <glitch-canvas id="gc-clone-canvas" buffer-size="1"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Works with <code>HTMLCanvasElement</code>, <code>HTMLImageElement</code>, and <code>HTMLPictureElement</code>.</p>
+<pre>gc.cloneFrom(canvasElement);</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>3. Attributes</h2>
+
+    <h3>3a. <code>fps</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-fps" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Playback frame rate. Default is <code>8</code>.</p>
+<pre>&lt;glitch-canvas fps="8"&gt;&lt;/glitch-canvas&gt;
+
+// Or set via property:
+gc.fps = 12;</pre>
+        </div>
+    </div>
+
+    <h3>3b. <code>buffer-size</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-buf" buffer-size="4"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Number of internal frame buffers. More buffers means smoother variation during playback. Default is <code>4</code>.</p>
+<pre>&lt;glitch-canvas buffer-size="4"&gt;&lt;/glitch-canvas&gt;
+
+// Or set via property:
+gc.bufferSize = 6;</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>4. Single-Value Glitch Types</h2>
+
+    <h3>4a. WidthGlitch</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-width" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Overwrites the image width byte in the SOF0 segment. Accepts a single <code>GlitchValue</code> only.</p>
+<pre>var glitch = new G.WidthGlitch(
+  new G.Position(0),
+  new G.GlitchValue(200),
+);
+glitch.randomizeMode = 'val';
+gc.addGlitch(glitch);</pre>
+        </div>
+    </div>
+
+    <h3>4b. QuantumGlitch</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-quantum" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Substitutes a byte in the DQT quantization table. Single value only.</p>
+<pre>var glitch = new G.QuantumGlitch(
+  new G.Position(50),
+  new G.GlitchValue(80),
+);
+glitch.randomizeMode = 'val';
+gc.addGlitch(glitch);</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>5. Multi-Value Glitch Types</h2>
+
+    <h3>5a. ChaosGlitch (single value)</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-chaos-single" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Substitutes bytes in the SOS scan data. Can use a single <code>GlitchValue</code>:</p>
+<pre>var glitch = new G.ChaosGlitch(
+  new G.Position(30),
+  new G.GlitchValue(200),
+);
+glitch.randomizeMode = 'val';
+gc.addGlitch(glitch);</pre>
+        </div>
+    </div>
+
+    <h3>5b. ChaosGlitch (sequential distribution)</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-chaos-seq" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>With <code>GlitchValueCollection</code> and sequential distribution, entries are written to consecutive pool indices.</p>
+<pre>var coll = new G.GlitchValueCollection(
+  [
+    { value: 200 },
+    { value: 150 },
+    { value: 100 },
+  ],
+  G.DistributionKind.Sequential,
+);
+coll.valueRange = { min: 50, max: 200 };
+
+var glitch = new G.ChaosGlitch(
+  new G.Position(40),
+  coll,
+);
+glitch.randomizeMode = 'val';</pre>
+        </div>
+    </div>
+
+    <h3>5c. ChaosGlitch (random distribution)</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-chaos-rand" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Random distribution scatters entries within a <code>spread</code> range around the base position.</p>
+<pre>var coll = new G.GlitchValueCollection(
+  [
+    { value: 200 },
+    { value: 180 },
+    { value: 160 },
+  ],
+  G.DistributionKind.Random,
+);
+coll.countRange = { min: 2, max: 6 };
+coll.valueRange = { min: 50, max: 220 };
+coll.spread = { min: 0, max: 100 };
+
+var glitch = new G.ChaosGlitch(
+  new G.Position(50),
+  coll,
+);
+glitch.randomizeMode = 'both';</pre>
+        </div>
+    </div>
+
+    <h3>5d. ChaosGlitch (uniform distribution)</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-chaos-uni" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Uniform distribution spaces entries evenly across the full pool, giving maximum coverage.</p>
+<pre>var coll = new G.GlitchValueCollection(
+  [
+    { value: 200 },
+    { value: 180 },
+    { value: 160 },
+    { value: 140 },
+  ],
+  G.DistributionKind.Uniform,
+);
+coll.valueRange = { min: 50, max: 220 };
+
+var glitch = new G.ChaosGlitch(
+  new G.Position(20),
+  coll,
+);
+glitch.randomizeMode = 'both';</pre>
+        </div>
+    </div>
+
+    <h3>5e. HuffmanGlitch</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-huffman" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Substitutes bytes in the DHT AC Huffman symbol table. Supports both single and multi-value.</p>
+<pre>var coll = new G.GlitchValueCollection(
+  [
+    { value: 128 },
+    { value: 64 },
+    { value: 192 },
+  ],
+  G.DistributionKind.Random,
+);
+coll.valueRange = { min: 0, max: 200 };
+coll.spread = { min: 0, max: 50 };
+
+var glitch = new G.HuffmanGlitch(
+  new G.Position(30),
+  coll,
+);
+glitch.randomizeMode = 'both';</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>6. GhostGlitch (Block Copy)</h2>
+
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-ghost" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Copies a block of scan data from a source offset to a target position. Always uses <code>GlitchValueCollection</code>. Each entry is one copy operation. <code>Offset</code> controls how far back the source is from the target.</p>
+<pre>var coll = new G.GlitchValueCollection(
+  [
+    { value: 100 },
+    { value: 200 },
+    { value: 50 },
+  ],
+  G.DistributionKind.Sequential,
+);
+coll.countRange = { min: 2, max: 5 };
+coll.valueRange = { min: 0, max: 254 };
+
+var glitch = new G.GhostGlitch(
+  new G.Position(50),
+  new G.Offset(10),
+  coll,
+);
+glitch.randomizeMode = 'both';</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>7. Randomization Modes</h2>
+    <p>Each glitch has a <code>randomizeMode</code> property that controls what gets randomized per frame during playback.</p>
+
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-modes" buffer-size="3"></glitch-canvas>
+        </div>
+        <div class="code">
+<pre>glitch.randomizeMode = 'none'; // static, no change
+glitch.randomizeMode = 'val';  // randomize values
+glitch.randomizeMode = 'pos';  // randomize position
+glitch.randomizeMode = 'both'; // randomize both</pre>
+            <p>Below: WidthGlitch with <code>'val'</code> + ChaosGlitch with <code>'both'</code>.</p>
+<pre>var w = new G.WidthGlitch(
+  new G.Position(0),
+  new G.GlitchValue(200),
+);
+w.randomizeMode = 'val';
+
+var c = new G.ChaosGlitch(
+  new G.Position(50),
+  new G.GlitchValueCollection(
+    [{ value: 200 }, { value: 150 }],
+    G.DistributionKind.Sequential,
+  ),
+);
+c.val.valueRange = { min: 50, max: 220 };
+c.val.countRange = { min: 2, max: 8 };
+c.randomizeMode = 'both';</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>8. Combining Multiple Glitches</h2>
+
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-combined" buffer-size="3"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Use <code>setGlitches()</code> to apply multiple glitch types. Use <code>addGlitch()</code> and <code>removeGlitch()</code> for individual management.</p>
+<pre>gc.setGlitches([
+  new G.WidthGlitch(
+    new G.Position(0),
+    new G.GlitchValue(200),
+  ),
+  new G.ChaosGlitch(
+    new G.Position(40),
+    new G.GlitchValueCollection(
+      [{ value: 200 }, { value: 150 }, { value: 100 }],
+      G.DistributionKind.Sequential,
+    ),
+  ),
+  new G.QuantumGlitch(
+    new G.Position(50),
+    new G.GlitchValue(80),
+  ),
+]);</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>9. Playback Controls</h2>
+
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-playback" buffer-size="3"></glitch-canvas>
+        </div>
+        <div class="code">
+<pre>gc.play();                  // start playback loop
+gc.pause();                 // stop playback
+gc.isPlaying;               // boolean, read-only
+
+gc.randomize();             // randomize all glitch params, re-render
+gc.requestRender();         // re-render without randomizing
+
+gc.download('output.jpg');  // export current frame as JPEG</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>10. Manual Re-rendering</h2>
+    <p>When you change glitch parameters at runtime, call <code>requestRender()</code> to update the display.</p>
+
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-rerender" buffer-size="1"></glitch-canvas>
+        </div>
+        <div class="code">
+<pre>var glitch = new G.ChaosGlitch(
+  new G.Position(50),
+  new G.GlitchValue(200),
+);
+gc.addGlitch(glitch);
+
+// Later, change a parameter:
+glitch.position = new G.Position(75);
+glitch.val = new G.GlitchValue(100);
+gc.requestRender();</pre>
+        </div>
+    </div>
+
+    <!-- ============================================================ -->
+    <h2>11. API Reference</h2>
+
+    <h3>Attributes</h3>
+<pre>src          string   Image URL to fetch on connect
+fps          number   Playback frame rate (default: 8)
+buffer-size  number   Number of internal frame buffers (default: 4)
+autoplay     boolean  Auto-play after image loads</pre>
+
+    <h3>Methods</h3>
+<pre>play()                                        Start playback
+pause()                                       Stop playback
+load(url: string): Promise&lt;void&gt;             Fetch and load image from URL
+cloneFrom(el: Canvas|Image|Picture): void     Capture from existing element
+addGlitch(glitch: BaseGlitch): void           Add one glitch
+removeGlitch(glitch: BaseGlitch): void        Remove one glitch
+setGlitches(glitches: BaseGlitch[]): void     Replace all glitches
+randomize(): void                             Randomize all params, re-render
+requestRender(): void                         Re-render current params
+download(filename?: string): void             Export frame as JPEG</pre>
+
+    <h3>Properties</h3>
+<pre>isPlaying    boolean              Read-only playback state
+glitches     ReadonlyArray         Current glitch list
+fps          number                Frame rate
+bufferSize   number                Buffer count
+src          string                Image URL
+autoplay     boolean               Auto-play on load</pre>
+
+    <h3>Glitch Types</h3>
+<pre>WidthGlitch(position, val: GlitchValue)
+QuantumGlitch(position, val: GlitchValue)
+ChaosGlitch(position, val: GlitchValue | GlitchValueCollection)
+HuffmanGlitch(position, val: GlitchValue | GlitchValueCollection)
+GhostGlitch(position, offset: Offset, val: GlitchValueCollection)</pre>
+
+    <h3>Parameter Classes</h3>
+<pre>Position(value: number)                // 0 to 100, normalized position in pool
+GlitchValue(value: number)             // 0 to 254, single byte
+Offset(value: number)                  // integer, source distance for GhostGlitch
+GlitchValueCollection(entries, dist?)   // multi-value with distribution strategy
+DistributionKind.Sequential            // consecutive pool indices
+DistributionKind.Random                // scattered within spread range
+DistributionKind.Uniform               // evenly spaced across pool</pre>
+
+    <h3>GlitchValueCollection Config</h3>
+<pre>coll.valueRange = { min: 0, max: 254 };    // value range for randomize()
+coll.countRange = { min: 2, max: 8 };       // entry count range for randomize()
+coll.spread = { min: 0, max: 100 };         // spread range (Random dist only)
+coll.randomize();                            // regenerate entries
+coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
+
+    <!-- ============================================================ -->
+    <script>
+        var srcImg = document.getElementById('src-img');
+
+        function initAll() {
+            // 3a. fps demo
+            var gcFps = document.getElementById('gc-fps');
+            var fpsG = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
+            fpsG.randomizeMode = 'val';
+            gcFps.addGlitch(fpsG);
+            gcFps.cloneFrom(srcImg);
+            addControls(gcFps);
+
+            // 3b. buffer-size demo
+            var gcBuf = document.getElementById('gc-buf');
+            var bufG = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(180));
+            bufG.randomizeMode = 'both';
+            gcBuf.addGlitch(bufG);
+            gcBuf.cloneFrom(srcImg);
+            addControls(gcBuf);
+
+            // 4a. WidthGlitch
+            var gcW = document.getElementById('gc-width');
+            var w = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            w.randomizeMode = 'val';
+            gcW.addGlitch(w);
+            gcW.cloneFrom(srcImg);
+            addControls(gcW);
+
+            // 4b. QuantumGlitch
+            var gcQ = document.getElementById('gc-quantum');
+            var q = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
+            q.randomizeMode = 'val';
+            gcQ.addGlitch(q);
+            gcQ.cloneFrom(srcImg);
+            addControls(gcQ);
+
+            // 5a. ChaosGlitch single
+            var gcCS = document.getElementById('gc-chaos-single');
+            var cs = new G.ChaosGlitch(new G.Position(30), new G.GlitchValue(200));
+            cs.randomizeMode = 'val';
+            gcCS.addGlitch(cs);
+            gcCS.cloneFrom(srcImg);
+            addControls(gcCS);
+
+            // 5b. ChaosGlitch sequential
+            var gcCSeq = document.getElementById('gc-chaos-seq');
+            var collSeq = new G.GlitchValueCollection(
+                [{ value: 200 }, { value: 150 }, { value: 100 }],
+                G.DistributionKind.Sequential,
+            );
+            collSeq.valueRange = { min: 50, max: 200 };
+            var cseq = new G.ChaosGlitch(new G.Position(40), collSeq);
+            cseq.randomizeMode = 'val';
+            gcCSeq.addGlitch(cseq);
+            gcCSeq.cloneFrom(srcImg);
+            addControls(gcCSeq);
+
+            // 5c. ChaosGlitch random
+            var gcCR = document.getElementById('gc-chaos-rand');
+            var collRand = new G.GlitchValueCollection(
+                [{ value: 200 }, { value: 180 }, { value: 160 }],
+                G.DistributionKind.Random,
+            );
+            collRand.countRange = { min: 2, max: 6 };
+            collRand.valueRange = { min: 50, max: 220 };
+            collRand.spread = { min: 0, max: 100 };
+            var cr = new G.ChaosGlitch(new G.Position(50), collRand);
+            cr.randomizeMode = 'both';
+            gcCR.addGlitch(cr);
+            gcCR.cloneFrom(srcImg);
+            addControls(gcCR);
+
+            // 5d. ChaosGlitch uniform
+            var gcCU = document.getElementById('gc-chaos-uni');
+            var collUni = new G.GlitchValueCollection(
+                [{ value: 200 }, { value: 180 }, { value: 160 }, { value: 140 }],
+                G.DistributionKind.Uniform,
+            );
+            collUni.valueRange = { min: 50, max: 220 };
+            var cu = new G.ChaosGlitch(new G.Position(20), collUni);
+            cu.randomizeMode = 'both';
+            gcCU.addGlitch(cu);
+            gcCU.cloneFrom(srcImg);
+            addControls(gcCU);
+
+            // 5e. HuffmanGlitch
+            var gcH = document.getElementById('gc-huffman');
+            var collH = new G.GlitchValueCollection(
+                [{ value: 128 }, { value: 64 }, { value: 192 }],
+                G.DistributionKind.Random,
+            );
+            collH.valueRange = { min: 0, max: 200 };
+            collH.spread = { min: 0, max: 50 };
+            var h = new G.HuffmanGlitch(new G.Position(30), collH);
+            h.randomizeMode = 'both';
+            gcH.addGlitch(h);
+            gcH.cloneFrom(srcImg);
+            addControls(gcH);
+
+            // 6. GhostGlitch
+            var gcGhost = document.getElementById('gc-ghost');
+            var collGh = new G.GlitchValueCollection(
+                [{ value: 100 }, { value: 200 }, { value: 50 }],
+                G.DistributionKind.Sequential,
+            );
+            collGh.countRange = { min: 2, max: 5 };
+            collGh.valueRange = { min: 0, max: 254 };
+            var gh = new G.GhostGlitch(new G.Position(50), new G.Offset(10), collGh);
+            gh.randomizeMode = 'both';
+            gcGhost.addGlitch(gh);
+            gcGhost.cloneFrom(srcImg);
+            addControls(gcGhost);
+
+            // 7. Randomization modes
+            var gcModes = document.getElementById('gc-modes');
+            var wMode = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            wMode.randomizeMode = 'val';
+            var collMode = new G.GlitchValueCollection(
+                [{ value: 200 }, { value: 150 }],
+                G.DistributionKind.Sequential,
+            );
+            collMode.valueRange = { min: 50, max: 220 };
+            collMode.countRange = { min: 2, max: 8 };
+            var cMode = new G.ChaosGlitch(new G.Position(50), collMode);
+            cMode.randomizeMode = 'both';
+            gcModes.setGlitches([wMode, cMode]);
+            gcModes.cloneFrom(srcImg);
+            addControls(gcModes);
+
+            // 8. Combined
+            var gcComb = document.getElementById('gc-combined');
+            gcComb.setGlitches([
+                new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200)),
+                new G.ChaosGlitch(
+                    new G.Position(40),
+                    new G.GlitchValueCollection(
+                        [{ value: 200 }, { value: 150 }, { value: 100 }],
+                        G.DistributionKind.Sequential,
+                    ),
+                ),
+                new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80)),
+            ]);
+            gcComb.cloneFrom(srcImg);
+            addControls(gcComb);
+
+            // 9. Playback controls
+            var gcPB = document.getElementById('gc-playback');
+            var wPB = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            wPB.randomizeMode = 'val';
+            var cPB = new G.ChaosGlitch(
+                new G.Position(45),
+                new G.GlitchValueCollection(
+                    [{ value: 200 }, { value: 160 }, { value: 120 }],
+                    G.DistributionKind.Random,
+                ),
+            );
+            cPB.val.valueRange = { min: 50, max: 220 };
+            cPB.val.spread = { min: 0, max: 80 };
+            cPB.randomizeMode = 'both';
+            gcPB.setGlitches([wPB, cPB]);
+            gcPB.cloneFrom(srcImg);
+            addControls(gcPB);
+
+            // 10. Re-render demo
+            var gcRR = document.getElementById('gc-rerender');
+            var rrGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200));
+            gcRR.addGlitch(rrGlitch);
+            gcRR.cloneFrom(srcImg);
+            addControls(gcRR);
+
+            autoPlayWhenVisible();
+        }
+
+        if (srcImg.complete && srcImg.naturalWidth) {
+            initAll();
+        } else {
+            srcImg.onload = initAll;
+        }
     </script>
 </body>
 </html>

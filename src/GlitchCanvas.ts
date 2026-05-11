@@ -14,7 +14,7 @@ export class GlitchCanvas extends HTMLElement {
     private _glitches: BaseGlitch[] = [];
     private _playing = false;
     private _playbackTimer: number | null = null;
-    private _fps = 12;
+    private _fps = 8;
     private _src = '';
     private _autoplay = false;
     private _imageWidth = 0;
