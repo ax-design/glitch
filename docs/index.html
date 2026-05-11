@@ -305,8 +305,8 @@
 
                     // Value range
                     cfgDiv.appendChild(document.createTextNode('Val range: '));
-                    var vrMin = makeField('Min', item.valRangeMin, 0, 254, 1, function(v) { item.valRangeMin = v; });
-                    var vrMax = makeField('Max', item.valRangeMax, 0, 254, 1, function(v) { item.valRangeMax = v; });
+                    var vrMin = makeField('Min', item.valRangeMin, 0, 254, 1, function(v) { item.valRangeMin = v; syncGlitches(); });
+                    var vrMax = makeField('Max', item.valRangeMax, 0, 254, 1, function(v) { item.valRangeMax = v; syncGlitches(); });
                     cfgDiv.appendChild(vrMin[0]); cfgDiv.appendChild(vrMin[1]);
                     cfgDiv.appendChild(document.createElement('br'));
                     cfgDiv.appendChild(vrMax[0]); cfgDiv.appendChild(vrMax[1]);
@@ -314,8 +314,8 @@
 
                     // Count range
                     cfgDiv.appendChild(document.createTextNode('Count range: '));
-                    var cnMin = makeField('Min', item.countMin, 1, 20, 1, function(v) { item.countMin = v; });
-                    var cnMax = makeField('Max', item.countMax, 1, 20, 1, function(v) { item.countMax = v; });
+                    var cnMin = makeField('Min', item.countMin, 1, 20, 1, function(v) { item.countMin = v; syncGlitches(); });
+                    var cnMax = makeField('Max', item.countMax, 1, 20, 1, function(v) { item.countMax = v; syncGlitches(); });
                     cfgDiv.appendChild(cnMin[0]); cfgDiv.appendChild(cnMin[1]);
                     cfgDiv.appendChild(document.createElement('br'));
                     cfgDiv.appendChild(cnMax[0]); cfgDiv.appendChild(cnMax[1]);
@@ -337,8 +337,8 @@
                     if (item.distribution === 'random') {
                         cfgDiv.appendChild(document.createElement('br'));
                         cfgDiv.appendChild(document.createTextNode('Spread: '));
-                        var spMin = makeField('Min', item.spreadMin, 0, 200, 1, function(v) { item.spreadMin = v; });
-                        var spMax = makeField('Max', item.spreadMax, 0, 200, 1, function(v) { item.spreadMax = v; });
+                        var spMin = makeField('Min', item.spreadMin, 0, 200, 1, function(v) { item.spreadMin = v; syncGlitches(); });
+                        var spMax = makeField('Max', item.spreadMax, 0, 200, 1, function(v) { item.spreadMax = v; syncGlitches(); });
                         cfgDiv.appendChild(spMin[0]); cfgDiv.appendChild(spMin[1]);
                         cfgDiv.appendChild(document.createElement('br'));
                         cfgDiv.appendChild(spMax[0]); cfgDiv.appendChild(spMax[1]);
