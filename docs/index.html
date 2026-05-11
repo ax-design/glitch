@@ -196,6 +196,20 @@ gc.bufferSize = 6;</pre>
         </div>
     </div>
 
+    <h3>3c. <code>quality</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-quality" quality="0.3" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>JPEG encoding quality (0.01 to 1.0). Lower quality produces coarser JPEG artifacts, making glitch effects more dramatic. Default is <code>0.95</code>.</p>
+<pre>&lt;glitch-canvas quality="0.3"&gt;&lt;/glitch-canvas&gt;
+
+// Or via property:
+gc.quality = 0.5;</pre>
+        </div>
+    </div>
+
     <!-- ============================================================ -->
     <h2>4. Single-Value Glitch Types</h2>
 
@@ -218,18 +232,40 @@ gc.addGlitch(glitch);</pre>
     <h3>4b. QuantumGlitch</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-quantum" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="gc-quantum" quality="0.3" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Substitutes bytes in the DQT quantization table. Single value only, so add multiple instances at different positions for a visible combined effect.</p>
-<pre>for (var i = 0; i &lt; 4; i++) {
-  var glitch = new G.QuantumGlitch(
-    new G.Position(20 + i * 20),
-    new G.GlitchValue(100 + i * 30),
-  );
-  glitch.randomizeMode = 'both';
-  gc.addGlitch(glitch);
-}</pre>
+            <p>Substitutes a byte in the DQT quantization table. Single value only. Lower <code>quality</code> produces larger quantization values, making the effect visible.</p>
+<pre>&lt;glitch-canvas quality="0.3"&gt;&lt;/glitch-canvas&gt;
+
+var glitch = new G.QuantumGlitch(
+  new G.Position(50),
+  new G.GlitchValue(80),
+);
+glitch.randomizeMode = 'both';
+gc.addGlitch(glitch);</pre>
+        </div>
+    </div>
+
+    <h3>4c. QuantumGlitch + Quality Randomization</h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="gc-quality-rand" buffer-size="3"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Set <code>qualityRange</code> to randomize JPEG quality along with glitch parameters. Each call to <code>randomize()</code> re-encodes the source at a new quality, producing different JPEG structure and quantization values.</p>
+<pre>gc.qualityRange = { min: 0.1, max: 0.6 };
+
+var glitch = new G.QuantumGlitch(
+  new G.Position(50),
+  new G.GlitchValue(80),
+);
+glitch.randomizeMode = 'both';
+gc.addGlitch(glitch);
+
+// randomize() now also randomizes quality
+// and re-encodes the JPEG at the new quality
+gc.randomize();</pre>
         </div>
     </div>
 
@@ -499,6 +535,7 @@ gc.requestRender();</pre>
 <pre>src          string   Image URL to fetch on connect
 fps          number   Playback frame rate (default: 8)
 buffer-size  number   Number of internal frame buffers (default: 4)
+quality      number   JPEG encoding quality, 0.01-1.0 (default: 0.95)
 autoplay     boolean  Auto-play after image loads</pre>
 
     <h3>Methods</h3>
@@ -514,12 +551,14 @@ requestRender(): void                         Re-render current params
 download(filename?: string): void             Export frame as JPEG</pre>
 
     <h3>Properties</h3>
-<pre>isPlaying    boolean              Read-only playback state
-glitches     ReadonlyArray         Current glitch list
-fps          number                Frame rate
-bufferSize   number                Buffer count
-src          string                Image URL
-autoplay     boolean               Auto-play on load</pre>
+<pre>isPlaying     boolean              Read-only playback state
+glitches      ReadonlyArray         Current glitch list
+fps           number                Frame rate
+bufferSize    number                Buffer count
+quality       number                JPEG encoding quality (0.01-1.0)
+qualityRange  Range&lt;number&gt;|undef   Range for quality randomization
+src           string                Image URL
+autoplay      boolean               Auto-play on load</pre>
 
     <h3>Glitch Types</h3>
 <pre>WidthGlitch(position, val: GlitchValue)
@@ -565,6 +604,14 @@ coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
             gcBuf.cloneFrom(srcImg);
             addControls(gcBuf);
 
+            // 3c. quality demo
+            var gcQl = document.getElementById('gc-quality');
+            var qlG = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
+            qlG.randomizeMode = 'both';
+            gcQl.addGlitch(qlG);
+            gcQl.cloneFrom(srcImg);
+            addControls(gcQl);
+
             // 4a. WidthGlitch
             var gcW = document.getElementById('gc-width');
             var w = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
@@ -575,16 +622,20 @@ coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
 
             // 4b. QuantumGlitch
             var gcQ = document.getElementById('gc-quantum');
-            for (var qi = 0; qi < 4; qi++) {
-                var q = new G.QuantumGlitch(
-                    new G.Position(20 + qi * 20),
-                    new G.GlitchValue(100 + qi * 30),
-                );
-                q.randomizeMode = 'both';
-                gcQ.addGlitch(q);
-            }
+            var q = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
+            q.randomizeMode = 'both';
+            gcQ.addGlitch(q);
             gcQ.cloneFrom(srcImg);
             addControls(gcQ);
+
+            // 4c. QuantumGlitch + Quality Randomization
+            var gcQR = document.getElementById('gc-quality-rand');
+            gcQR.qualityRange = { min: 0.1, max: 0.6 };
+            var qr = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
+            qr.randomizeMode = 'both';
+            gcQR.addGlitch(qr);
+            gcQR.cloneFrom(srcImg);
+            addControls(gcQR);
 
             // 5a. ChaosGlitch single
             var gcCS = document.getElementById('gc-chaos-single');

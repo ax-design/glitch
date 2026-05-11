@@ -1,6 +1,7 @@
 import { BaseGlitch } from './glitch/BaseGlitch.js';
 import { GlitchValue } from './params/GlitchValue.js';
 import { GlitchValueCollection } from './params/GlitchValueCollection.js';
+import { Range } from './params/Range.js';
 import { JpegAnalyzer } from './core/JpegAnalyzer.js';
 import { base64ToBytes } from './core/JpegBytes.js';
 import { BufferManager } from './core/BufferManager.js';
@@ -17,12 +18,15 @@ export class GlitchCanvas extends HTMLElement {
     private _fps = 8;
     private _src = '';
     private _autoplay = false;
+    private _quality = 0.95;
+    private _sourceCanvas: HTMLCanvasElement | null = null;
+    qualityRange?: Range<number>;
     private _imageWidth = 0;
     private _imageHeight = 0;
     private _renderDebounce: number | null = null;
 
     static get observedAttributes(): string[] {
-        return ['src', 'fps', 'buffer-size', 'autoplay'];
+        return ['src', 'fps', 'buffer-size', 'autoplay', 'quality'];
     }
 
     constructor() {
@@ -72,6 +76,12 @@ export class GlitchCanvas extends HTMLElement {
                     this.play();
                 }
                 break;
+            case 'quality':
+                this._quality = Math.min(1, Math.max(0.01, parseFloat(newVal) || 0.95));
+                if (this.isConnected && this._src) {
+                    this.load(this._src);
+                }
+                break;
         }
     }
 
@@ -112,6 +122,15 @@ export class GlitchCanvas extends HTMLElement {
         } else {
             this.removeAttribute('autoplay');
         }
+    }
+
+    get quality(): number {
+        return this._quality;
+    }
+
+    set quality(val: number) {
+        this._quality = Math.min(1, Math.max(0.01, val));
+        this.setAttribute('quality', String(this._quality));
     }
 
     // --- Playback ---
@@ -170,7 +189,11 @@ export class GlitchCanvas extends HTMLElement {
 
     cloneFrom(element: HTMLCanvasElement | HTMLImageElement | HTMLPictureElement): void {
         if (element instanceof HTMLCanvasElement) {
-            const base64 = element.toDataURL('image/jpeg', 0.95);
+            this._sourceCanvas = document.createElement('canvas');
+            this._sourceCanvas.width = element.width;
+            this._sourceCanvas.height = element.height;
+            this._sourceCanvas.getContext('2d')!.drawImage(element, 0, 0);
+            const base64 = this._sourceCanvas.toDataURL('image/jpeg', this._quality);
             const bytes = base64ToBytes(base64);
             this._setSource(bytes, element.width, element.height);
         } else if (element instanceof HTMLImageElement) {
@@ -189,7 +212,8 @@ export class GlitchCanvas extends HTMLElement {
         tempCanvas.height = img.naturalHeight || img.height;
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
-        const base64 = tempCanvas.toDataURL('image/jpeg', 0.95);
+        this._sourceCanvas = tempCanvas;
+        const base64 = tempCanvas.toDataURL('image/jpeg', this._quality);
         const bytes = base64ToBytes(base64);
         this._setSource(bytes, tempCanvas.width, tempCanvas.height);
     }
@@ -210,8 +234,8 @@ export class GlitchCanvas extends HTMLElement {
         tempCanvas.height = img.naturalHeight;
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
-
-        const base64 = tempCanvas.toDataURL('image/jpeg', 0.95);
+        this._sourceCanvas = tempCanvas;
+        const base64 = tempCanvas.toDataURL('image/jpeg', this._quality);
         const bytes = base64ToBytes(base64);
         this._setSource(bytes, tempCanvas.width, tempCanvas.height);
     }
@@ -272,6 +296,17 @@ export class GlitchCanvas extends HTMLElement {
     // --- Randomization ---
 
     randomize(): void {
+        if (this.qualityRange && this._sourceCanvas) {
+            const lo = this.qualityRange.min;
+            const hi = this.qualityRange.max;
+            this._quality = lo + Math.random() * (hi - lo);
+            const base64 = this._sourceCanvas.toDataURL('image/jpeg', this._quality);
+            const bytes = base64ToBytes(base64);
+            const analysis = JpegAnalyzer.analyze(bytes);
+            this._bufferManager.setSource(bytes, analysis, this._imageWidth, this._imageHeight);
+            this._bufferManager.setGlitches(this._glitches);
+        }
+
         for (const glitch of this._glitches) {
             if ('val' in glitch) {
                 const val = (glitch as any).val;
@@ -311,7 +346,7 @@ export class GlitchCanvas extends HTMLElement {
     download(filename?: string): void {
         const a = document.createElement('a');
         a.download = filename ?? ('glitch_' + Date.now() + '.jpg');
-        a.href = this._canvas.toDataURL('image/jpeg', 0.95);
+        a.href = this._canvas.toDataURL('image/jpeg', this._quality);
         a.click();
     }
 
