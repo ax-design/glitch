@@ -221,13 +221,15 @@ gc.addGlitch(glitch);</pre>
             <glitch-canvas id="gc-quantum" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Substitutes a byte in the DQT quantization table. Single value only.</p>
-<pre>var glitch = new G.QuantumGlitch(
-  new G.Position(50),
-  new G.GlitchValue(80),
-);
-glitch.randomizeMode = 'val';
-gc.addGlitch(glitch);</pre>
+            <p>Substitutes bytes in the DQT quantization table. Single value only, so add multiple instances at different positions for a visible combined effect.</p>
+<pre>for (var i = 0; i &lt; 4; i++) {
+  var glitch = new G.QuantumGlitch(
+    new G.Position(20 + i * 20),
+    new G.GlitchValue(100 + i * 30),
+  );
+  glitch.randomizeMode = 'both';
+  gc.addGlitch(glitch);
+}</pre>
         </div>
     </div>
 
@@ -438,8 +440,12 @@ c.randomizeMode = 'both';</pre>
     ),
   ),
   new G.QuantumGlitch(
-    new G.Position(50),
-    new G.GlitchValue(80),
+    new G.Position(30),
+    new G.GlitchValue(180),
+  ),
+  new G.QuantumGlitch(
+    new G.Position(70),
+    new G.GlitchValue(60),
   ),
 ]);</pre>
         </div>
@@ -569,9 +575,14 @@ coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
 
             // 4b. QuantumGlitch
             var gcQ = document.getElementById('gc-quantum');
-            var q = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
-            q.randomizeMode = 'val';
-            gcQ.addGlitch(q);
+            for (var qi = 0; qi < 4; qi++) {
+                var q = new G.QuantumGlitch(
+                    new G.Position(20 + qi * 20),
+                    new G.GlitchValue(100 + qi * 30),
+                );
+                q.randomizeMode = 'both';
+                gcQ.addGlitch(q);
+            }
             gcQ.cloneFrom(srcImg);
             addControls(gcQ);
 
@@ -679,7 +690,8 @@ coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
                         G.DistributionKind.Sequential,
                     ),
                 ),
-                new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80)),
+                new G.QuantumGlitch(new G.Position(30), new G.GlitchValue(180)),
+                new G.QuantumGlitch(new G.Position(70), new G.GlitchValue(60)),
             ]);
             gcComb.cloneFrom(srcImg);
             addControls(gcComb);
