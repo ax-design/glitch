@@ -7,46 +7,384 @@
 <body>
     <h1>Glitch Canvas Demo</h1>
 
-    <img id="source" src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png" crossorigin="anonymous">
+    <h2>Input</h2>
+    <p>Draw on the canvas, drag-drop an image, or load from URL.</p>
+    <canvas id="input" width="480" height="360" style="border:1px solid #000;cursor:crosshair"></canvas>
     <br>
-    <glitch-canvas id="gc" fps="12" buffer-size="4"></glitch-canvas>
+    <button id="btn-clear">Clear</button>
+    <br><br>
+    <input id="file-input" type="file" accept="image/*">
+    <button id="btn-load-file">Load File</button>
+    <br>
+    <input id="url-input" type="text" placeholder="https://example.com/photo.jpg" size="50">
+    <button id="btn-load-url">Load URL</button>
+    <span id="load-error" style="color:red"></span>
 
+    <h2>Glitches</h2>
+    <div id="controls"></div>
+    <button id="btn-add">+ Add Glitch</button>
+
+    <h2>Output</h2>
+    <glitch-canvas id="gc" fps="8" buffer-size="4"></glitch-canvas>
     <br>
-    <button id="btn-clone">Clone from img</button>
+
+    <h3>Playback</h3>
     <button id="btn-play">Play</button>
     <button id="btn-pause">Pause</button>
-    <button id="btn-randomize">Randomize</button>
+    <select id="anim-mode">
+        <option value="val">Shuffle Val</option>
+        <option value="pos">Shuffle Pos</option>
+        <option value="both" selected>Shuffle Both</option>
+    </select>
+    <br><br>
+    <button id="btn-download">Download JPG</button>
 
-    <script type="module">
-        import {
-            register, ChaosGlitch, QuantumGlitch, WidthGlitch,
-            HuffmanGlitch, GhostGlitch, Offset,
-            Position, GlitchValue, GlitchValueCollection,
-            DistributionKind,
-        } from '../build/main.js';
+    <script src="../build/main.js"></script>
+    <script>
+        var G = AxGlitch;
+        G.register();
 
-        register();
+        var gc = document.getElementById('gc');
+        var inputCanvas = document.getElementById('input');
+        var ctx = inputCanvas.getContext('2d');
+        var controlsDiv = document.getElementById('controls');
 
-        const gc = document.getElementById('gc');
+        var TYPES = [
+            { name: 'Chaos', cls: G.ChaosGlitch, supportsMulti: true },
+            { name: 'Quantum', cls: G.QuantumGlitch, supportsMulti: false },
+            { name: 'Width', cls: G.WidthGlitch, supportsMulti: false },
+            { name: 'Huffman', cls: G.HuffmanGlitch, supportsMulti: true },
+            { name: 'Ghost', cls: G.GhostGlitch, supportsMulti: true },
+        ];
 
-        gc.addGlitch(new WidthGlitch(new Position(0), new GlitchValue(200)));
+        // Each item tracks full state including randomization config
+        var items = [
+            { id: 1, typeIndex: 2, pos: 0, val: 200, multiVal: false,
+              valRangeMin: 0, valRangeMax: 254,
+              countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential' },
+            { id: 2, typeIndex: 0, pos: 55.2, val: 200, multiVal: true,
+              valRangeMin: 50, valRangeMax: 200,
+              countMin: 3, countMax: 8, spreadMin: 0, spreadMax: 100, distribution: 'random' },
+        ];
+        var nextId = 3;
 
-        gc.addGlitch(new ChaosGlitch(
-            new Position(55),
-            new GlitchValueCollection(
-                [{ value: 200 }, { value: 150 }, { value: 100 }],
-                DistributionKind.Sequential,
-            ),
-        ));
+        // --- Input canvas drawing ---
+        var drawing = false;
+        var lastX = 0, lastY = 0, hue = 0;
 
-        gc.addGlitch(new QuantumGlitch(new Position(50), new GlitchValue(80)));
+        function getPos(e) {
+            var r = inputCanvas.getBoundingClientRect();
+            var cx = (e.clientX || (e.touches && e.touches[0].clientX) || 0);
+            var cy = (e.clientY || (e.touches && e.touches[0].clientY) || 0);
+            return { x: (cx - r.left) * inputCanvas.width / r.width, y: (cy - r.top) * inputCanvas.height / r.height };
+        }
 
-        document.getElementById('btn-clone').onclick = () => {
-            gc.cloneFrom(document.getElementById('source'));
+        inputCanvas.addEventListener('mousedown', function(e) { drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; });
+        inputCanvas.addEventListener('mousemove', function(e) {
+            if (!drawing) return;
+            var p = getPos(e);
+            ctx.strokeStyle = 'hsl(' + hue + ',100%,50%)';
+            ctx.lineWidth = 5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
+            lastX = p.x; lastY = p.y; hue = (hue + 5) % 360;
+        });
+        inputCanvas.addEventListener('mouseup', function() { if (drawing) { drawing = false; capture(); } });
+        inputCanvas.addEventListener('mouseleave', function() { if (drawing) { drawing = false; capture(); } });
+        inputCanvas.addEventListener('touchstart', function(e) { e.preventDefault(); drawing = true; var p = getPos(e); lastX = p.x; lastY = p.y; }, { passive: false });
+        inputCanvas.addEventListener('touchmove', function(e) {
+            e.preventDefault(); if (!drawing) return;
+            var p = getPos(e);
+            ctx.strokeStyle = 'hsl(' + hue + ',100%,50%)';
+            ctx.lineWidth = 5; ctx.lineCap = 'round';
+            ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
+            lastX = p.x; lastY = p.y; hue = (hue + 5) % 360;
+        }, { passive: false });
+        inputCanvas.addEventListener('touchend', function() { if (drawing) { drawing = false; capture(); } });
+
+        // --- Drag & Drop ---
+        inputCanvas.addEventListener('dragover', function(e) { e.preventDefault(); });
+        inputCanvas.addEventListener('drop', function(e) {
+            e.preventDefault();
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (!files || !files.length) return;
+            var file = files[0];
+            if (!file.type.match('image.*')) return;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width, h = img.height;
+                    if (w > 480 || h > 360) { var r = Math.min(480 / w, 360 / h); w *= r; h *= r; }
+                    inputCanvas.width = Math.round(w);
+                    inputCanvas.height = Math.round(h);
+                    ctx.drawImage(img, 0, 0, inputCanvas.width, inputCanvas.height);
+                    capture();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        });
+
+        // --- Load from File ---
+        document.getElementById('btn-load-file').onclick = function() {
+            document.getElementById('file-input').click();
         };
-        document.getElementById('btn-play').onclick = () => gc.play();
-        document.getElementById('btn-pause').onclick = () => gc.pause();
-        document.getElementById('btn-randomize').onclick = () => gc.randomize();
+        document.getElementById('file-input').onchange = function() {
+            var file = this.files && this.files[0];
+            if (!file) return;
+            var reader = new FileReader();
+            reader.onload = function(ev) {
+                var img = new Image();
+                img.onload = function() {
+                    var w = img.width, h = img.height;
+                    if (w > 480 || h > 360) { var r = Math.min(480 / w, 360 / h); w *= r; h *= r; }
+                    inputCanvas.width = Math.round(w);
+                    inputCanvas.height = Math.round(h);
+                    ctx.drawImage(img, 0, 0, inputCanvas.width, inputCanvas.height);
+                    capture();
+                };
+                img.src = ev.target.result;
+            };
+            reader.readAsDataURL(file);
+        };
+
+        // --- Load from URL ---
+        document.getElementById('btn-load-url').onclick = function() {
+            var url = document.getElementById('url-input').value.trim();
+            var errorEl = document.getElementById('load-error');
+            errorEl.textContent = '';
+            if (!url) return;
+            gc.load(url).then(function() {
+                // Also draw onto input canvas so user can see what was loaded
+                var shadowCanvas = gc.shadowRoot.querySelector('canvas');
+                if (shadowCanvas) {
+                    inputCanvas.width = shadowCanvas.width;
+                    inputCanvas.height = shadowCanvas.height;
+                    ctx.drawImage(shadowCanvas, 0, 0);
+                }
+            }).catch(function(err) {
+                errorEl.textContent = err.message;
+            });
+        };
+
+        // --- Capture & Feed ---
+        function capture() {
+            gc.cloneFrom(inputCanvas);
+            syncGlitches();
+        }
+
+        document.getElementById('btn-clear').onclick = function() {
+            inputCanvas.width = 480; inputCanvas.height = 360;
+            ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, 480, 360);
+            ctx.font = '18px monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'center';
+            ctx.fillText('Draw Here', 240, 185);
+            capture();
+        };
+
+        // --- Build a GlitchValueCollection from item config ---
+        function buildCollection(item) {
+            var entries = [];
+            var count = Math.floor((item.countMin + item.countMax) / 2);
+            for (var i = 0; i < count; i++) {
+                entries.push({ value: item.val });
+            }
+            var distKey = item.distribution === 'random' ? G.DistributionKind.Random
+                        : item.distribution === 'uniform' ? G.DistributionKind.Uniform
+                        : G.DistributionKind.Sequential;
+            var coll = new G.GlitchValueCollection(entries, distKey);
+            coll.valueRange = { min: item.valRangeMin, max: item.valRangeMax };
+            coll.countRange = { min: item.countMin, max: item.countMax };
+            if (distKey === G.DistributionKind.Random) {
+                coll.spread = { min: item.spreadMin, max: item.spreadMax };
+            }
+            return coll;
+        }
+
+        // --- Build a single GlitchValue with range config ---
+        function buildValue(item) {
+            return new G.GlitchValue(item.val);
+        }
+
+        // --- Sync Glitch Objects to Component ---
+        function syncGlitches() {
+            var glitches = items.map(function(item) {
+                var pos = new G.Position(item.pos);
+                var typeDef = TYPES[item.typeIndex];
+
+                if (typeDef.cls === G.GhostGlitch) {
+                    // Ghost always uses GlitchValueCollection
+                    var coll = buildCollection(item);
+                    return new G.GhostGlitch(pos, new G.Offset(item.val), coll);
+                }
+
+                if (item.multiVal && typeDef.supportsMulti) {
+                    return new typeDef.cls(pos, buildCollection(item));
+                }
+
+                return new typeDef.cls(pos, buildValue(item));
+            });
+
+            gc.setGlitches(glitches);
+            gc.requestRender();
+        }
+
+        // --- Glitch Controls ---
+        function makeField(label, value, min, max, step, onChange) {
+            var span = document.createElement('span');
+            span.textContent = label + ': ' + value + ' ';
+            var input = document.createElement('input');
+            input.type = 'range'; input.min = min; input.max = max; input.step = step || 1; input.value = value;
+            input.style.width = '200px';
+            input.oninput = function() {
+                var v = parseFloat(input.value);
+                span.textContent = label + ': ' + (step && step < 1 ? v.toFixed(1) : v) + ' ';
+                onChange(v);
+            };
+            return [span, input];
+        }
+
+        function renderControls() {
+            controlsDiv.innerHTML = '';
+            items.forEach(function(item, i) {
+                var typeDef = TYPES[item.typeIndex];
+                var div = document.createElement('div');
+                div.style.cssText = 'border:1px solid #999;padding:8px;margin:4px 0';
+
+                // Header row: #N + type select + remove
+                var header = document.createElement('div');
+                var numSpan = document.createElement('span');
+                numSpan.textContent = '#' + (i + 1) + ' ';
+                header.appendChild(numSpan);
+
+                var sel = document.createElement('select');
+                TYPES.forEach(function(t, ti) {
+                    var opt = document.createElement('option');
+                    opt.value = ti; opt.textContent = t.name;
+                    if (ti === item.typeIndex) opt.selected = true;
+                    sel.appendChild(opt);
+                });
+                sel.onchange = function() { item.typeIndex = parseInt(sel.value); renderControls(); syncGlitches(); };
+                header.appendChild(sel);
+
+                var rmBtn = document.createElement('button');
+                rmBtn.textContent = 'Remove';
+                rmBtn.style.marginLeft = '10px';
+                rmBtn.onclick = function() { items = items.filter(function(g) { return g.id !== item.id; }); renderControls(); syncGlitches(); };
+                header.appendChild(rmBtn);
+                div.appendChild(header);
+
+                // Position
+                var posFields = makeField('Pos', item.pos, 0, 100, 0.1, function(v) { item.pos = v; syncGlitches(); });
+                div.appendChild(document.createElement('br'));
+                div.appendChild(posFields[0]); div.appendChild(posFields[1]);
+
+                // Single val display
+                var valFields = makeField('Val', item.val, 0, 255, 1, function(v) { item.val = v; syncGlitches(); });
+                div.appendChild(document.createElement('br'));
+                div.appendChild(valFields[0]); div.appendChild(valFields[1]);
+
+                // Multi-val toggle (only for types that support it, not Ghost which is always multi)
+                if (typeDef.supportsMulti && typeDef.cls !== G.GhostGlitch) {
+                    div.appendChild(document.createElement('br'));
+                    var multiLabel = document.createElement('label');
+                    var multiCheck = document.createElement('input');
+                    multiCheck.type = 'checkbox'; multiCheck.checked = item.multiVal;
+                    multiCheck.onchange = function() { item.multiVal = multiCheck.checked; renderControls(); syncGlitches(); };
+                    multiLabel.appendChild(multiCheck);
+                    multiLabel.appendChild(document.createTextNode(' Multi-val'));
+                    div.appendChild(multiLabel);
+                }
+
+                // Multi-val config section
+                var showMultiConfig = item.multiVal || typeDef.cls === G.GhostGlitch;
+                if (showMultiConfig && typeDef.supportsMulti) {
+                    var cfgDiv = document.createElement('div');
+                    cfgDiv.style.marginTop = '6px';
+                    cfgDiv.appendChild(document.createTextNode('Randomization Config:'));
+                    cfgDiv.appendChild(document.createElement('br'));
+
+                    // Value range
+                    cfgDiv.appendChild(document.createTextNode('Val range: '));
+                    var vrMin = makeField('Min', item.valRangeMin, 0, 254, 1, function(v) { item.valRangeMin = v; });
+                    var vrMax = makeField('Max', item.valRangeMax, 0, 254, 1, function(v) { item.valRangeMax = v; });
+                    cfgDiv.appendChild(vrMin[0]); cfgDiv.appendChild(vrMin[1]);
+                    cfgDiv.appendChild(document.createElement('br'));
+                    cfgDiv.appendChild(vrMax[0]); cfgDiv.appendChild(vrMax[1]);
+                    cfgDiv.appendChild(document.createElement('br'));
+
+                    // Count range
+                    cfgDiv.appendChild(document.createTextNode('Count range: '));
+                    var cnMin = makeField('Min', item.countMin, 1, 20, 1, function(v) { item.countMin = v; });
+                    var cnMax = makeField('Max', item.countMax, 1, 20, 1, function(v) { item.countMax = v; });
+                    cfgDiv.appendChild(cnMin[0]); cfgDiv.appendChild(cnMin[1]);
+                    cfgDiv.appendChild(document.createElement('br'));
+                    cfgDiv.appendChild(cnMax[0]); cfgDiv.appendChild(cnMax[1]);
+                    cfgDiv.appendChild(document.createElement('br'));
+
+                    // Distribution
+                    cfgDiv.appendChild(document.createTextNode('Distribution: '));
+                    var distSel = document.createElement('select');
+                    ['sequential', 'random', 'uniform'].forEach(function(d) {
+                        var opt = document.createElement('option');
+                        opt.value = d; opt.textContent = d;
+                        if (d === item.distribution) opt.selected = true;
+                        distSel.appendChild(opt);
+                    });
+                    distSel.onchange = function() { item.distribution = distSel.value; renderControls(); syncGlitches(); };
+                    cfgDiv.appendChild(distSel);
+
+                    // Spread (only for random distribution)
+                    if (item.distribution === 'random') {
+                        cfgDiv.appendChild(document.createElement('br'));
+                        cfgDiv.appendChild(document.createTextNode('Spread: '));
+                        var spMin = makeField('Min', item.spreadMin, 0, 200, 1, function(v) { item.spreadMin = v; });
+                        var spMax = makeField('Max', item.spreadMax, 0, 200, 1, function(v) { item.spreadMax = v; });
+                        cfgDiv.appendChild(spMin[0]); cfgDiv.appendChild(spMin[1]);
+                        cfgDiv.appendChild(document.createElement('br'));
+                        cfgDiv.appendChild(spMax[0]); cfgDiv.appendChild(spMax[1]);
+                    }
+
+                    div.appendChild(cfgDiv);
+                }
+
+                controlsDiv.appendChild(div);
+            });
+        }
+
+        document.getElementById('btn-add').onclick = function() {
+            items.push({
+                id: nextId++, typeIndex: 0, pos: Math.random() * 100, val: Math.floor(Math.random() * 256),
+                multiVal: false, valRangeMin: 0, valRangeMax: 254,
+                countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential',
+            });
+            renderControls();
+            syncGlitches();
+        };
+
+        // --- Playback ---
+        document.getElementById('btn-play').onclick = function() {
+            gc.setRandomizeMode(document.getElementById('anim-mode').value);
+            gc.play();
+        };
+        document.getElementById('btn-pause').onclick = function() {
+            gc.pause();
+        };
+        document.getElementById('anim-mode').onchange = function() {
+            gc.setRandomizeMode(this.value);
+        };
+
+        // --- Download ---
+        document.getElementById('btn-download').onclick = function() {
+            gc.download();
+        };
+
+        // --- Init ---
+        ctx.fillStyle = '#fff';
+        ctx.fillRect(0, 0, 480, 360);
+        ctx.font = '18px monospace'; ctx.fillStyle = '#ccc'; ctx.textAlign = 'center';
+        ctx.fillText('Draw Here', 240, 185);
+        renderControls();
+        capture();
     </script>
 </body>
 </html>

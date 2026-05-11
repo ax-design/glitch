@@ -3,7 +3,7 @@ import { GlitchValue } from './params/GlitchValue.js';
 import { GlitchValueCollection } from './params/GlitchValueCollection.js';
 import { JpegAnalyzer } from './core/JpegAnalyzer.js';
 import { base64ToBytes } from './core/JpegBytes.js';
-import { BufferManager } from './core/BufferManager.js';
+import { BufferManager, RandomizeMode } from './core/BufferManager.js';
 
 export class GlitchCanvas extends HTMLElement {
     static readonly ElementName = 'glitch-canvas';
@@ -19,6 +19,7 @@ export class GlitchCanvas extends HTMLElement {
     private _autoplay = false;
     private _imageWidth = 0;
     private _imageHeight = 0;
+    private _renderDebounce: number | null = null;
 
     static get observedAttributes(): string[] {
         return ['src', 'fps', 'buffer-size', 'autoplay'];
@@ -237,6 +238,10 @@ export class GlitchCanvas extends HTMLElement {
             if (this._autoplay) {
                 this.play();
             }
+        }).catch((err) => {
+            if (err.message !== 'superseded') {
+                console.warn('GlitchCanvas setSource render failed:', err);
+            }
         });
     }
 
@@ -264,6 +269,12 @@ export class GlitchCanvas extends HTMLElement {
         return this._glitches;
     }
 
+    // --- Randomization Mode ---
+
+    setRandomizeMode(mode: RandomizeMode): void {
+        this._bufferManager.setRandomizeMode(mode);
+    }
+
     // --- Randomization ---
 
     randomize(): void {
@@ -282,7 +293,32 @@ export class GlitchCanvas extends HTMLElement {
 
     requestRender(): void {
         if (!this._bufferManager.ready) return;
-        this._bufferManager.invalidateAll();
+        if (this._renderDebounce !== null) {
+            clearTimeout(this._renderDebounce);
+        }
+        this._renderDebounce = window.setTimeout(() => {
+            this._renderDebounce = null;
+            this._bufferManager.invalidateAll().then(() => {
+                if (this._playing) return;
+                const frame = this._bufferManager.pickFrame();
+                if (frame) {
+                    const ctx = this._canvas.getContext('2d')!;
+                    ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
+                    ctx.drawImage(frame.canvas, 0, 0);
+                }
+            }).catch((err) => {
+                if (err.message !== 'superseded') {
+                    console.warn('GlitchCanvas render failed:', err);
+                }
+            });
+        }, 30);
+    }
+
+    download(filename?: string): void {
+        const a = document.createElement('a');
+        a.download = filename ?? ('glitch_' + Date.now() + '.jpg');
+        a.href = this._canvas.toDataURL('image/jpeg', 0.95);
+        a.click();
     }
 
     // --- Internal ---

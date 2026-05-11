@@ -3,11 +3,14 @@ import { bytesToUrl } from './JpegBytes.js';
 import { BaseGlitch } from '../glitch/BaseGlitch.js';
 import { GlitchValue } from '../params/GlitchValue.js';
 import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
+import { Position } from '../params/Position.js';
 
 interface Buffer {
     canvas: HTMLCanvasElement;
     playCount: number;
 }
+
+export type RandomizeMode = 'val' | 'pos' | 'both' | 'none';
 
 export class BufferManager {
     private _buffers: Buffer[] = [];
@@ -20,6 +23,8 @@ export class BufferManager {
     private _wakeResolver: (() => void) | null = null;
     private _imageWidth = 0;
     private _imageHeight = 0;
+    private _randomizeMode: RandomizeMode = 'none';
+    private _invalidateGeneration = 0;
 
     constructor(bufferSize: number) {
         this._bufferSize = bufferSize;
@@ -48,6 +53,10 @@ export class BufferManager {
         this._glitches = glitches;
     }
 
+    setRandomizeMode(mode: RandomizeMode): void {
+        this._randomizeMode = mode;
+    }
+
     private _recreateBuffers(): void {
         this._buffers = Array.from({ length: this._bufferSize }, () => {
             const canvas = document.createElement('canvas');
@@ -60,16 +69,31 @@ export class BufferManager {
     async invalidateAll(): Promise<void> {
         if (!this._originalBytes || !this._analysis) return;
 
-        const promises = this._buffers.map(async (buffer) => {
-            const frameCanvas = await this._generateGlitchFrame();
-            buffer.canvas.width = this._imageWidth;
-            buffer.canvas.height = this._imageHeight;
-            const ctx = buffer.canvas.getContext('2d')!;
-            ctx.drawImage(frameCanvas, 0, 0);
-            buffer.playCount = 0;
-        });
+        const generation = ++this._invalidateGeneration;
 
-        await Promise.all(promises);
+        const results = await Promise.allSettled(
+            this._buffers.map(async (buffer) => {
+                const frameCanvas = await this._generateGlitchFrame();
+                if (this._invalidateGeneration !== generation) return;
+                buffer.canvas.width = this._imageWidth;
+                buffer.canvas.height = this._imageHeight;
+                const ctx = buffer.canvas.getContext('2d')!;
+                ctx.drawImage(frameCanvas, 0, 0);
+                buffer.playCount = 0;
+            }),
+        );
+
+        // If superseded by a newer invalidateAll, signal cancellation
+        if (this._invalidateGeneration !== generation) {
+            throw new Error('superseded');
+        }
+
+        // Log any non-superseded failures
+        for (const r of results) {
+            if (r.status === 'rejected') {
+                console.warn('Buffer frame generation failed:', r.reason);
+            }
+        }
     }
 
     pickFrame(): Buffer | null {
@@ -164,6 +188,27 @@ export class BufferManager {
         return maxCount > 0 ? target : null;
     }
 
+    private _randomizeGlitchParams(): void {
+        if (this._randomizeMode === 'none') return;
+
+        for (const glitch of this._glitches) {
+            if (this._randomizeMode === 'pos' || this._randomizeMode === 'both') {
+                glitch.position = new Position(Math.random() * 100);
+            }
+
+            if (this._randomizeMode === 'val' || this._randomizeMode === 'both') {
+                if ('val' in glitch) {
+                    const val = (glitch as any).val;
+                    if (val instanceof GlitchValueCollection) {
+                        val.randomize();
+                    } else if (val instanceof GlitchValue) {
+                        val.randomize();
+                    }
+                }
+            }
+        }
+    }
+
     private _applyGlitches(bytes: Uint8Array): void {
         if (!this._analysis) return;
 
@@ -174,6 +219,8 @@ export class BufferManager {
     }
 
     private async _generateGlitchFrame(): Promise<HTMLCanvasElement> {
+        this._randomizeGlitchParams();
+
         const bytes = new Uint8Array(this._originalBytes!);
         this._applyGlitches(bytes);
 
@@ -181,9 +228,9 @@ export class BufferManager {
         const url = URL.createObjectURL(blob);
 
         const img = new Image();
-        await new Promise<void>((resolve, reject) => {
-            img.onload = () => resolve();
-            img.onerror = () => reject(new Error('Failed to load glitched frame'));
+        const loaded = await new Promise<boolean>((resolve) => {
+            img.onload = () => resolve(true);
+            img.onerror = () => resolve(false);
             img.src = url;
         });
         URL.revokeObjectURL(url);
@@ -191,8 +238,11 @@ export class BufferManager {
         const canvas = document.createElement('canvas');
         canvas.width = this._imageWidth;
         canvas.height = this._imageHeight;
-        const ctx = canvas.getContext('2d')!;
-        ctx.drawImage(img, 0, 0);
+
+        if (loaded) {
+            const ctx = canvas.getContext('2d')!;
+            ctx.drawImage(img, 0, 0);
+        }
 
         return canvas;
     }
