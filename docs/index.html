@@ -547,7 +547,7 @@ autoplay     boolean  Auto-play after image loads</pre>
     <h3>Methods</h3>
 <pre>play()                                        Start playback
 pause()                                       Stop playback
-load(url: string): Promise&lt;void&gt;             Fetch and load image from URL
+load(url: string): Promise&lt;void&gt;              Fetch and load image from URL
 cloneFrom(el: Canvas|Image|Picture): void     Capture from existing element
 addGlitch(glitch: BaseGlitch): void           Add one glitch
 removeGlitch(glitch: BaseGlitch): void        Remove one glitch
@@ -557,7 +557,7 @@ requestRender(): void                         Re-render current params
 download(filename?: string): void             Export frame as JPEG</pre>
 
     <h3>Properties</h3>
-<pre>isPlaying     boolean              Read-only playback state
+<pre>isPlaying     boolean               Read-only playback state
 glitches      ReadonlyArray         Current glitch list
 fps           number                Frame rate
 bufferSize    number                Buffer count
@@ -577,17 +577,17 @@ GhostGlitch(position, offset: Offset, val: GlitchValueCollection)</pre>
 <pre>Position(value: number)                // 0 to 100, normalized position in pool
 GlitchValue(value: number)             // 0 to 254, single byte
 Offset(value: number)                  // integer, source distance for GhostGlitch
-GlitchValueCollection(entries, dist?)   // multi-value with distribution strategy
+GlitchValueCollection(entries, dist?)  // multi-value with distribution strategy
 DistributionKind.Sequential            // consecutive pool indices
 DistributionKind.Random                // scattered within spread range
 DistributionKind.Uniform               // evenly spaced across pool</pre>
 
     <h3>GlitchValueCollection Config</h3>
 <pre>collection.valueRange = { min: 0, max: 254 };    // value range for randomize()
-collection.countRange = { min: 2, max: 8 };       // entry count range for randomize()
-collection.spread = { min: 0, max: 100 };         // spread range (Random dist only)
-collection.randomize();                            // regenerate entries
-collection.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
+collection.countRange = { min: 2, max: 8 };      // entry count range for randomize()
+collection.spread = { min: 0, max: 100 };        // spread range (Random dist only)
+collection.randomize();                          // regenerate entries
+collection.resolve(pool, baseIdx);               // get concrete byte indices</pre>
 
     <!-- ============================================================ -->
     <script>
