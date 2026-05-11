@@ -1,6 +1,7 @@
 import { isSafe } from './JpegBytes.js';
 
 export interface JpegAnalysis {
+    [poolName: string]: number[];
     data: number[];
     dqt: number[];
     sof: number[];

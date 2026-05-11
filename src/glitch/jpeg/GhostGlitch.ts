@@ -1,11 +1,14 @@
-import { BaseGlitch } from './BaseGlitch.js';
-import { Position } from '../params/Position.js';
-import { Offset } from '../params/Offset.js';
-import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
-import { safeVal, isSafe } from '../core/JpegBytes.js';
+import { BaseGlitch } from '../BaseGlitch.js';
+import { Position } from '../../params/Position.js';
+import { Offset } from '../../params/Offset.js';
+import { GlitchValueCollection } from '../../params/GlitchValueCollection.js';
+import { safeVal, isSafe } from '../../core/JpegBytes.js';
+import type { Pool } from '../../params/Pool.js';
+import { poolAt } from '../../params/Pool.js';
 
 export class GhostGlitch extends BaseGlitch {
     readonly type = 'ghost';
+    readonly domain = 'jpeg';
     readonly targetPool = 'data';
     offset: Offset;
     val: GlitchValueCollection;
@@ -16,7 +19,7 @@ export class GhostGlitch extends BaseGlitch {
         this.val = val;
     }
 
-    apply(bytes: Uint8Array, pool: number[]): void {
+    apply(bytes: Uint8Array, pool: Pool): void {
         if (pool.length === 0) return;
 
         const baseIdx = Math.floor((this.position.value / 100) * (pool.length - 1));
@@ -25,7 +28,7 @@ export class GhostGlitch extends BaseGlitch {
         for (const { byteIndex, value } of resolved) {
             const copyLen = 100 + (value % 200);
             let sourceIdx = byteIndex - this.offset.value * 10;
-            if (sourceIdx < pool[0]) sourceIdx = pool[0];
+            if (sourceIdx < poolAt(pool, 0)) sourceIdx = poolAt(pool, 0);
 
             for (let k = 0; k < copyLen; k++) {
                 if (byteIndex + k >= bytes.length) break;

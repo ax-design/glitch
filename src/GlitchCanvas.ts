@@ -2,9 +2,9 @@ import { BaseGlitch } from './glitch/BaseGlitch.js';
 import { GlitchValue } from './params/GlitchValue.js';
 import { GlitchValueCollection } from './params/GlitchValueCollection.js';
 import { Range } from './params/Range.js';
-import { JpegAnalyzer } from './core/JpegAnalyzer.js';
-import { base64ToBytes } from './core/JpegBytes.js';
 import { BufferManager } from './core/BufferManager.js';
+import { JpegDomain } from './domain/JpegDomain.js';
+import { PngDomain } from './domain/PngDomain.js';
 
 export class GlitchCanvas extends HTMLElement {
     static readonly ElementName = 'glitch-canvas';
@@ -12,7 +12,7 @@ export class GlitchCanvas extends HTMLElement {
     private _root = this.attachShadow({ mode: 'open' });
     private _canvas: HTMLCanvasElement;
     private _bufferManager: BufferManager;
-    private _glitches: BaseGlitch[] = [];
+    private _domainGlitches = new Map<string, BaseGlitch[]>();
     private _playing = false;
     private _playbackTimer: number | null = null;
     private _fps = 8;
@@ -41,6 +41,8 @@ export class GlitchCanvas extends HTMLElement {
         this._root.insertBefore(style, this._canvas);
 
         this._bufferManager = new BufferManager(4);
+        this._bufferManager.registerDomain(new JpegDomain());
+        this._bufferManager.registerDomain(new PngDomain());
     }
 
     connectedCallback(): void {
@@ -157,6 +159,31 @@ export class GlitchCanvas extends HTMLElement {
         }
     }
 
+    // --- Domain Management ---
+
+    async enableDomain(domainId: string, options?: Record<string, unknown>): Promise<void> {
+        if (!this._sourceCanvas) return;
+        await this._bufferManager.enableDomain(
+            domainId,
+            this._sourceCanvas,
+            this._imageWidth,
+            this._imageHeight,
+            options,
+        );
+        const glitches = this._domainGlitches.get(domainId) ?? [];
+        this._bufferManager.setDomainGlitches(domainId, glitches);
+    }
+
+    disableDomain(domainId: string): void {
+        this._bufferManager.disableDomain(domainId);
+    }
+
+    get activeDomains(): string[] {
+        // BufferManager doesn't expose this directly, so we track from domainGlitches
+        // that have been enabled. For now, return known domain ids that have glitches.
+        return [...this._domainGlitches.keys()];
+    }
+
     // --- Image Loading ---
 
     async load(url: string): Promise<void> {
@@ -193,9 +220,7 @@ export class GlitchCanvas extends HTMLElement {
             this._sourceCanvas.width = element.width;
             this._sourceCanvas.height = element.height;
             this._sourceCanvas.getContext('2d')!.drawImage(element, 0, 0);
-            const base64 = this._sourceCanvas.toDataURL('image/jpeg', this._quality);
-            const bytes = base64ToBytes(base64);
-            this._setSource(bytes, element.width, element.height);
+            this._initDefaultDomain();
         } else if (element instanceof HTMLImageElement) {
             this._drawImageToSource(element);
         } else if (element instanceof HTMLPictureElement) {
@@ -213,9 +238,7 @@ export class GlitchCanvas extends HTMLElement {
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
         this._sourceCanvas = tempCanvas;
-        const base64 = tempCanvas.toDataURL('image/jpeg', this._quality);
-        const bytes = base64ToBytes(base64);
-        this._setSource(bytes, tempCanvas.width, tempCanvas.height);
+        this._initDefaultDomain();
     }
 
     private async _loadFromBlob(blob: Blob): Promise<void> {
@@ -235,27 +258,34 @@ export class GlitchCanvas extends HTMLElement {
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
         this._sourceCanvas = tempCanvas;
-        const base64 = tempCanvas.toDataURL('image/jpeg', this._quality);
-        const bytes = base64ToBytes(base64);
-        this._setSource(bytes, tempCanvas.width, tempCanvas.height);
+        this._initDefaultDomain();
     }
 
-    private _setSource(bytes: Uint8Array, width: number, height: number): void {
-        const analysis = JpegAnalyzer.analyze(bytes);
-        this._imageWidth = width;
-        this._imageHeight = height;
+    private async _initDefaultDomain(): Promise<void> {
+        if (!this._sourceCanvas) return;
 
-        this._canvas.width = width;
-        this._canvas.height = height;
+        this._imageWidth = this._sourceCanvas.width;
+        this._imageHeight = this._sourceCanvas.height;
+        this._canvas.width = this._imageWidth;
+        this._canvas.height = this._imageHeight;
 
-        this._bufferManager.setSource(bytes, analysis, width, height);
-        this._bufferManager.setGlitches(this._glitches);
+        await this._bufferManager.enableDomain(
+            'jpeg',
+            this._sourceCanvas,
+            this._imageWidth,
+            this._imageHeight,
+            { quality: this._quality },
+        );
+
+        for (const [domainId, glitches] of this._domainGlitches) {
+            this._bufferManager.setDomainGlitches(domainId, glitches);
+        }
+
         this._bufferManager.invalidateAll().then(() => {
-            // Draw the first buffer onto the main canvas immediately
             const frame = this._bufferManager.pickFrame();
             if (frame) {
                 const ctx = this._canvas.getContext('2d')!;
-                ctx.clearRect(0, 0, width, height);
+                ctx.clearRect(0, 0, this._imageWidth, this._imageHeight);
                 ctx.drawImage(frame.canvas, 0, 0);
             }
 
@@ -271,26 +301,57 @@ export class GlitchCanvas extends HTMLElement {
 
     // --- Glitch Management ---
 
-    addGlitch(glitch: BaseGlitch): void {
-        this._glitches.push(glitch);
-        this._bufferManager.setGlitches(this._glitches);
+    addGlitch(glitch: BaseGlitch, domainId?: string): void {
+        const targetDomain = domainId ?? this._resolveDefaultDomain(glitch.domain);
+        const list = this._domainGlitches.get(targetDomain) ?? [];
+        list.push(glitch);
+        this._domainGlitches.set(targetDomain, list);
+        this._bufferManager.setDomainGlitches(targetDomain, list);
     }
 
-    removeGlitch(glitch: BaseGlitch): void {
-        const idx = this._glitches.indexOf(glitch);
+    removeGlitch(glitch: BaseGlitch, domainId?: string): void {
+        const targetDomain = domainId ?? this._resolveDefaultDomain(glitch.domain);
+        const list = this._domainGlitches.get(targetDomain);
+        if (!list) return;
+        const idx = list.indexOf(glitch);
         if (idx >= 0) {
-            this._glitches.splice(idx, 1);
-            this._bufferManager.setGlitches(this._glitches);
+            list.splice(idx, 1);
+            this._bufferManager.setDomainGlitches(targetDomain, list);
         }
     }
 
-    setGlitches(glitches: BaseGlitch[]): void {
-        this._glitches = [...glitches];
-        this._bufferManager.setGlitches(this._glitches);
+    setGlitches(glitches: BaseGlitch[], domainId?: string): void {
+        if (domainId) {
+            this._domainGlitches.set(domainId, [...glitches]);
+            this._bufferManager.setDomainGlitches(domainId, [...glitches]);
+        } else {
+            // Distribute glitches by their domain field
+            const byDomain = new Map<string, BaseGlitch[]>();
+            for (const g of glitches) {
+                const list = byDomain.get(g.domain) ?? [];
+                list.push(g);
+                byDomain.set(g.domain, list);
+            }
+            for (const [id, list] of byDomain) {
+                this._domainGlitches.set(id, [...list]);
+                this._bufferManager.setDomainGlitches(id, [...list]);
+            }
+        }
     }
 
     get glitches(): ReadonlyArray<BaseGlitch> {
-        return this._glitches;
+        const all: BaseGlitch[] = [];
+        for (const list of this._domainGlitches.values()) {
+            all.push(...list);
+        }
+        return all;
+    }
+
+    private _resolveDefaultDomain(glitchDomain: string): string {
+        // If the domain is already active, use it. Otherwise fall back to jpeg.
+        const list = this._domainGlitches.get(glitchDomain);
+        if (list) return glitchDomain;
+        return 'jpeg';
     }
 
     // --- Randomization ---
@@ -300,20 +361,25 @@ export class GlitchCanvas extends HTMLElement {
             const lo = this.qualityRange.min;
             const hi = this.qualityRange.max;
             this._quality = lo + Math.random() * (hi - lo);
-            const base64 = this._sourceCanvas.toDataURL('image/jpeg', this._quality);
-            const bytes = base64ToBytes(base64);
-            const analysis = JpegAnalyzer.analyze(bytes);
-            this._bufferManager.setSource(bytes, analysis, this._imageWidth, this._imageHeight);
-            this._bufferManager.setGlitches(this._glitches);
+            // Re-encode JPEG domain with new quality
+            this._bufferManager.enableDomain(
+                'jpeg',
+                this._sourceCanvas,
+                this._imageWidth,
+                this._imageHeight,
+                { quality: this._quality },
+            );
         }
 
-        for (const glitch of this._glitches) {
-            if ('val' in glitch) {
-                const val = (glitch as any).val;
-                if (val instanceof GlitchValueCollection) {
-                    val.randomize();
-                } else if (val instanceof GlitchValue) {
-                    val.randomize();
+        for (const list of this._domainGlitches.values()) {
+            for (const glitch of list) {
+                if ('val' in glitch) {
+                    const val = (glitch as any).val;
+                    if (val instanceof GlitchValueCollection) {
+                        val.randomize();
+                    } else if (val instanceof GlitchValue) {
+                        val.randomize();
+                    }
                 }
             }
         }
@@ -345,8 +411,8 @@ export class GlitchCanvas extends HTMLElement {
 
     download(filename?: string): void {
         const a = document.createElement('a');
-        a.download = filename ?? ('glitch_' + Date.now() + '.jpg');
-        a.href = this._canvas.toDataURL('image/jpeg', this._quality);
+        a.download = filename ?? ('glitch_' + Date.now() + '.png');
+        a.href = this._canvas.toDataURL('image/png');
         a.click();
     }
 

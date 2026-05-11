@@ -1,6 +1,5 @@
-import { JpegAnalysis } from './JpegAnalyzer.js';
-import { bytesToUrl } from './JpegBytes.js';
-import { BaseGlitch } from '../glitch/BaseGlitch.js';
+import type { GlitchDomain, DomainState } from '../domain/types.js';
+import type { BaseGlitch } from '../glitch/BaseGlitch.js';
 import { GlitchValue } from '../params/GlitchValue.js';
 import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
 import { Position } from '../params/Position.js';
@@ -13,14 +12,15 @@ interface Buffer {
 export class BufferManager {
     private _buffers: Buffer[] = [];
     private _bufferSize: number;
-    private _originalBytes: Uint8Array | null = null;
-    private _analysis: JpegAnalysis | null = null;
-    private _glitches: BaseGlitch[] = [];
+    private _domains = new Map<string, GlitchDomain>();
+    private _domainStates = new Map<string, DomainState>();
+    private _domainGlitches = new Map<string, BaseGlitch[]>();
+    private _sourceCanvas: HTMLCanvasElement | null = null;
+    private _imageWidth = 0;
+    private _imageHeight = 0;
     private _running = false;
     private _abortController: AbortController | null = null;
     private _wakeResolver: (() => void) | null = null;
-    private _imageWidth = 0;
-    private _imageHeight = 0;
     private _invalidateGeneration = 0;
 
     constructor(bufferSize: number) {
@@ -33,21 +33,47 @@ export class BufferManager {
 
     set bufferSize(size: number) {
         this._bufferSize = size;
-        if (this._originalBytes) {
+        if (this._hasActiveDomains()) {
             this._recreateBuffers();
         }
     }
 
-    setSource(bytes: Uint8Array, analysis: JpegAnalysis, width: number, height: number): void {
-        this._originalBytes = bytes;
-        this._analysis = analysis;
-        this._imageWidth = width;
-        this._imageHeight = height;
-        this._recreateBuffers();
+    get ready(): boolean {
+        return this._hasActiveDomains();
     }
 
-    setGlitches(glitches: BaseGlitch[]): void {
-        this._glitches = glitches;
+    registerDomain(domain: GlitchDomain): void {
+        this._domains.set(domain.id, domain);
+    }
+
+    async enableDomain(domainId: string, sourceCanvas: HTMLCanvasElement, width: number, height: number, options?: Record<string, unknown>): Promise<void> {
+        const domain = this._domains.get(domainId);
+        if (!domain) return;
+
+        this._sourceCanvas = sourceCanvas;
+        this._imageWidth = width;
+        this._imageHeight = height;
+
+        const bytes = await domain.encode(sourceCanvas, options);
+        const state = await domain.prepare(bytes);
+        this._domainStates.set(domainId, state);
+
+        if (this._buffers.length === 0) {
+            this._recreateBuffers();
+        }
+    }
+
+    disableDomain(domainId: string): void {
+        this._domainStates.delete(domainId);
+        this._domainGlitches.delete(domainId);
+    }
+
+    setDomainGlitches(domainId: string, glitches: BaseGlitch[]): void {
+        this._domainGlitches.set(domainId, glitches);
+    }
+
+    private _hasActiveDomains(): boolean {
+        return this._domainStates.size > 0;
     }
 
     private _recreateBuffers(): void {
@@ -60,7 +86,7 @@ export class BufferManager {
     }
 
     async invalidateAll(): Promise<void> {
-        if (!this._originalBytes || !this._analysis) return;
+        if (!this._hasActiveDomains()) return;
 
         const generation = ++this._invalidateGeneration;
 
@@ -76,12 +102,10 @@ export class BufferManager {
             }),
         );
 
-        // If superseded by a newer invalidateAll, signal cancellation
         if (this._invalidateGeneration !== generation) {
             throw new Error('superseded');
         }
 
-        // Log any non-superseded failures
         for (const r of results) {
             if (r.status === 'rejected') {
                 console.warn('Buffer frame generation failed:', r.reason);
@@ -119,10 +143,6 @@ export class BufferManager {
             this._abortController = null;
         }
         this._wake();
-    }
-
-    get ready(): boolean {
-        return this._originalBytes !== null && this._analysis !== null;
     }
 
     private _wake(): void {
@@ -181,8 +201,8 @@ export class BufferManager {
         return maxCount > 0 ? target : null;
     }
 
-    private _randomizeGlitchParams(): void {
-        for (const glitch of this._glitches) {
+    private _randomizeGlitchParams(glitches: BaseGlitch[]): void {
+        for (const glitch of glitches) {
             const mode = glitch.randomizeMode;
             if (mode === 'none') continue;
 
@@ -203,22 +223,32 @@ export class BufferManager {
         }
     }
 
-    private _applyGlitches(bytes: Uint8Array): void {
-        if (!this._analysis) return;
+    private _pickActiveDomain(): { domain: GlitchDomain; state: DomainState; glitches: BaseGlitch[] } | null {
+        const activeIds = [...this._domainStates.keys()];
+        if (activeIds.length === 0) return null;
 
-        for (const glitch of this._glitches) {
-            const pool = this._analysis[glitch.targetPool];
-            glitch.apply(bytes, pool);
-        }
+        const domainId = activeIds[Math.floor(Math.random() * activeIds.length)];
+        const domain = this._domains.get(domainId);
+        const state = this._domainStates.get(domainId);
+        const glitches = this._domainGlitches.get(domainId) ?? [];
+
+        if (!domain || !state) return null;
+        return { domain, state, glitches };
     }
 
     private async _generateGlitchFrame(): Promise<HTMLCanvasElement> {
-        this._randomizeGlitchParams();
+        const selected = this._pickActiveDomain();
+        if (!selected) throw new Error('No active domain');
 
-        const bytes = new Uint8Array(this._originalBytes!);
-        this._applyGlitches(bytes);
+        const { domain, state, glitches } = selected;
 
-        const blob = new Blob([bytes.buffer as ArrayBuffer], { type: 'image/jpeg' });
+        if (glitches.length > 0) {
+            this._randomizeGlitchParams(glitches);
+        }
+
+        const resultBytes = await domain.generateFrame(state, glitches);
+
+        const blob = new Blob([resultBytes.buffer as ArrayBuffer], { type: domain.mimeType });
         const url = URL.createObjectURL(blob);
 
         const img = new Image();
@@ -235,7 +265,7 @@ export class BufferManager {
 
         if (loaded) {
             const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, 0, 0);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         }
 
         return canvas;

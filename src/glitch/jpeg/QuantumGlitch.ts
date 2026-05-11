@@ -1,10 +1,12 @@
-import { BaseGlitch } from './BaseGlitch.js';
-import { Position } from '../params/Position.js';
-import { GlitchValue } from '../params/GlitchValue.js';
-import { safeVal } from '../core/JpegBytes.js';
+import { BaseGlitch } from '../BaseGlitch.js';
+import { Position } from '../../params/Position.js';
+import { GlitchValue } from '../../params/GlitchValue.js';
+import { safeVal } from '../../core/JpegBytes.js';
+import type { Pool } from '../../params/Pool.js';
 
 export class QuantumGlitch extends BaseGlitch {
     readonly type = 'quantum';
+    readonly domain = 'jpeg';
     readonly targetPool = 'dqt';
     val: GlitchValue;
 
@@ -13,7 +15,7 @@ export class QuantumGlitch extends BaseGlitch {
         this.val = val;
     }
 
-    apply(bytes: Uint8Array, pool: number[]): void {
+    apply(bytes: Uint8Array, pool: Pool): void {
         if (pool.length === 0) return;
         const byteIndex = this.position.resolve(pool);
         if (byteIndex >= 0 && byteIndex < bytes.length) {

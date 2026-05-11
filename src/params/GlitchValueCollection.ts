@@ -1,4 +1,6 @@
 import { Range } from './Range.js';
+import type { Pool } from './Pool.js';
+import { poolAt } from './Pool.js';
 import { DistributionKind, resolveDistribution } from './Distribution.js';
 
 export interface ValueEntry {
@@ -56,7 +58,7 @@ export class GlitchValueCollection {
      * @param baseIdx   The base pool index (NOT a byte index)
      * @returns         Array of { byteIndex, value } ready for writing to the byte array
      */
-    resolve(pool: number[], baseIdx: number): Array<{ byteIndex: number; value: number }> {
+    resolve(pool: Pool, baseIdx: number): Array<{ byteIndex: number; value: number }> {
         if (this._entries.length === 0) return [];
 
         const hasManualOffsets = this._entries.some((e) => e.positionOffset !== undefined);
@@ -65,7 +67,7 @@ export class GlitchValueCollection {
             return this._entries.map((entry) => {
                 const offset = entry.positionOffset ?? 0;
                 const poolIdx = Math.max(0, Math.min(baseIdx + offset, pool.length - 1));
-                return { byteIndex: pool[poolIdx], value: entry.value };
+                return { byteIndex: poolAt(pool, poolIdx), value: entry.value };
             });
         }
 
@@ -78,7 +80,7 @@ export class GlitchValueCollection {
         );
 
         return this._entries.map((entry, i) => ({
-            byteIndex: pool[poolIndices[i] ?? pool.length - 1],
+            byteIndex: poolAt(pool, poolIndices[i] ?? pool.length - 1),
             value: entry.value,
         }));
     }
