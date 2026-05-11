@@ -483,7 +483,13 @@ chaosGlitch.randomizeMode = 'both';</pre>
     new G.Position(70),
     new G.GlitchValue(60),
   ),
-]);</pre>
+]);
+
+// Set randomizeMode so each frame varies:
+glitchCanvas.glitches[0].randomizeMode = 'val';
+glitchCanvas.glitches[1].randomizeMode = 'both';
+glitchCanvas.glitches[2].randomizeMode = 'both';
+glitchCanvas.glitches[3].randomizeMode = 'both';</pre>
         </div>
     </div>
 
@@ -732,18 +738,21 @@ collection.resolve(pool, baseIdx);                 // get concrete byte indices<
 
             // 8. Combined
             var combinedCanvas = document.getElementById('demo-combined');
-            combinedCanvas.setGlitches([
-                new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200)),
-                new G.ChaosGlitch(
-                    new G.Position(40),
-                    new G.GlitchValueCollection(
-                        [{ value: 200 }, { value: 150 }, { value: 100 }],
-                        G.DistributionKind.Sequential,
-                    ),
+            var combinedWidth = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            combinedWidth.randomizeMode = 'val';
+            var combinedChaos = new G.ChaosGlitch(
+                new G.Position(40),
+                new G.GlitchValueCollection(
+                    [{ value: 200 }, { value: 150 }, { value: 100 }],
+                    G.DistributionKind.Sequential,
                 ),
-                new G.QuantumGlitch(new G.Position(30), new G.GlitchValue(180)),
-                new G.QuantumGlitch(new G.Position(70), new G.GlitchValue(60)),
-            ]);
+            );
+            combinedChaos.randomizeMode = 'both';
+            var combinedQuantum1 = new G.QuantumGlitch(new G.Position(30), new G.GlitchValue(180));
+            combinedQuantum1.randomizeMode = 'both';
+            var combinedQuantum2 = new G.QuantumGlitch(new G.Position(70), new G.GlitchValue(60));
+            combinedQuantum2.randomizeMode = 'both';
+            combinedCanvas.setGlitches([combinedWidth, combinedChaos, combinedQuantum1, combinedQuantum2]);
             combinedCanvas.cloneFrom(sourceImage);
             addControls(combinedCanvas);
 
@@ -768,6 +777,7 @@ collection.resolve(pool, baseIdx);                 // get concrete byte indices<
             // 10. Re-render demo
             var rerenderCanvas = document.getElementById('demo-rerender');
             var rerenderGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200));
+            rerenderGlitch.randomizeMode = 'both';
             rerenderCanvas.addGlitch(rerenderGlitch);
             rerenderCanvas.cloneFrom(sourceImage);
             addControls(rerenderCanvas);
