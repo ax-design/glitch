@@ -31,11 +31,6 @@
     <h3>Playback</h3>
     <button id="btn-play">Play</button>
     <button id="btn-pause">Pause</button>
-    <select id="anim-mode">
-        <option value="val">Shuffle Val</option>
-        <option value="pos">Shuffle Pos</option>
-        <option value="both" selected>Shuffle Both</option>
-    </select>
     <br><br>
     <button id="btn-download">Download JPG</button>
 
@@ -59,10 +54,10 @@
 
         // Each item tracks full state including randomization config
         var items = [
-            { id: 1, typeIndex: 2, pos: 0, val: 200, multiVal: false,
+            { id: 1, typeIndex: 2, pos: 0, val: 200, multiVal: false, randomizeMode: 'none',
               valRangeMin: 0, valRangeMax: 254,
               countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential' },
-            { id: 2, typeIndex: 0, pos: 55.2, val: 200, multiVal: true,
+            { id: 2, typeIndex: 0, pos: 55.2, val: 200, multiVal: true, randomizeMode: 'both',
               valRangeMin: 50, valRangeMax: 200,
               countMin: 3, countMax: 8, spreadMin: 0, spreadMax: 100, distribution: 'random' },
         ];
@@ -224,6 +219,7 @@
                 return new typeDef.cls(pos, buildValue(item));
             });
 
+            glitches.forEach(function(g, i) { g.randomizeMode = items[i].randomizeMode; });
             gc.setGlitches(glitches);
             gc.requestRender();
         }
@@ -301,6 +297,18 @@
                     var cfgDiv = document.createElement('div');
                     cfgDiv.style.marginTop = '6px';
                     cfgDiv.appendChild(document.createTextNode('Randomization Config:'));
+
+                    // Randomize mode
+                    cfgDiv.appendChild(document.createTextNode(' Mode: '));
+                    var modeSel = document.createElement('select');
+                    ['none', 'val', 'pos', 'both'].forEach(function(m) {
+                        var opt = document.createElement('option');
+                        opt.value = m; opt.textContent = m;
+                        if (m === item.randomizeMode) opt.selected = true;
+                        modeSel.appendChild(opt);
+                    });
+                    modeSel.onchange = function() { item.randomizeMode = modeSel.value; syncGlitches(); };
+                    cfgDiv.appendChild(modeSel);
                     cfgDiv.appendChild(document.createElement('br'));
 
                     // Value range
@@ -354,7 +362,8 @@
         document.getElementById('btn-add').onclick = function() {
             items.push({
                 id: nextId++, typeIndex: 0, pos: Math.random() * 100, val: Math.floor(Math.random() * 256),
-                multiVal: false, valRangeMin: 0, valRangeMax: 254,
+                multiVal: false, randomizeMode: 'none',
+                valRangeMin: 0, valRangeMax: 254,
                 countMin: 2, countMax: 5, spreadMin: 0, spreadMax: 50, distribution: 'sequential',
             });
             renderControls();
@@ -363,14 +372,10 @@
 
         // --- Playback ---
         document.getElementById('btn-play').onclick = function() {
-            gc.setRandomizeMode(document.getElementById('anim-mode').value);
             gc.play();
         };
         document.getElementById('btn-pause').onclick = function() {
             gc.pause();
-        };
-        document.getElementById('anim-mode').onchange = function() {
-            gc.setRandomizeMode(this.value);
         };
 
         // --- Download ---

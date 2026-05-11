@@ -10,8 +10,6 @@ interface Buffer {
     playCount: number;
 }
 
-export type RandomizeMode = 'val' | 'pos' | 'both' | 'none';
-
 export class BufferManager {
     private _buffers: Buffer[] = [];
     private _bufferSize: number;
@@ -23,7 +21,6 @@ export class BufferManager {
     private _wakeResolver: (() => void) | null = null;
     private _imageWidth = 0;
     private _imageHeight = 0;
-    private _randomizeMode: RandomizeMode = 'none';
     private _invalidateGeneration = 0;
 
     constructor(bufferSize: number) {
@@ -51,10 +48,6 @@ export class BufferManager {
 
     setGlitches(glitches: BaseGlitch[]): void {
         this._glitches = glitches;
-    }
-
-    setRandomizeMode(mode: RandomizeMode): void {
-        this._randomizeMode = mode;
     }
 
     private _recreateBuffers(): void {
@@ -189,14 +182,15 @@ export class BufferManager {
     }
 
     private _randomizeGlitchParams(): void {
-        if (this._randomizeMode === 'none') return;
-
         for (const glitch of this._glitches) {
-            if (this._randomizeMode === 'pos' || this._randomizeMode === 'both') {
+            const mode = glitch.randomizeMode;
+            if (mode === 'none') continue;
+
+            if (mode === 'pos' || mode === 'both') {
                 glitch.position = new Position(Math.random() * 100);
             }
 
-            if (this._randomizeMode === 'val' || this._randomizeMode === 'both') {
+            if (mode === 'val' || mode === 'both') {
                 if ('val' in glitch) {
                     const val = (glitch as any).val;
                     if (val instanceof GlitchValueCollection) {

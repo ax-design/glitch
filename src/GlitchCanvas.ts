@@ -3,7 +3,7 @@ import { GlitchValue } from './params/GlitchValue.js';
 import { GlitchValueCollection } from './params/GlitchValueCollection.js';
 import { JpegAnalyzer } from './core/JpegAnalyzer.js';
 import { base64ToBytes } from './core/JpegBytes.js';
-import { BufferManager, RandomizeMode } from './core/BufferManager.js';
+import { BufferManager } from './core/BufferManager.js';
 
 export class GlitchCanvas extends HTMLElement {
     static readonly ElementName = 'glitch-canvas';
@@ -267,12 +267,6 @@ export class GlitchCanvas extends HTMLElement {
 
     get glitches(): ReadonlyArray<BaseGlitch> {
         return this._glitches;
-    }
-
-    // --- Randomization Mode ---
-
-    setRandomizeMode(mode: RandomizeMode): void {
-        this._bufferManager.setRandomizeMode(mode);
     }
 
     // --- Randomization ---

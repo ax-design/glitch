@@ -15,4 +15,3 @@ export type { ValueEntry } from './params/GlitchValueCollection.js';
 export { JpegAnalyzer } from './core/JpegAnalyzer.js';
 export type { JpegAnalysis } from './core/JpegAnalyzer.js';
 export { BufferManager } from './core/BufferManager.js';
-export type { RandomizeMode } from './core/BufferManager.js';
