@@ -28,57 +28,57 @@
         var G = AxGlitch;
         G.register();
 
-        function playBtn(gc) {
-            var btn = document.createElement('button');
-            btn.textContent = 'Play';
-            btn.onclick = function() { gc.play(); };
-            return btn;
+        function createPlayButton(canvas) {
+            var button = document.createElement('button');
+            button.textContent = 'Play';
+            button.onclick = function() { canvas.play(); };
+            return button;
         }
-        function pauseBtn(gc) {
-            var btn = document.createElement('button');
-            btn.textContent = 'Pause';
-            btn.onclick = function() { gc.pause(); };
-            return btn;
+        function createPauseButton(canvas) {
+            var button = document.createElement('button');
+            button.textContent = 'Pause';
+            button.onclick = function() { canvas.pause(); };
+            return button;
         }
-        function randomBtn(gc) {
-            var btn = document.createElement('button');
-            btn.textContent = 'Randomize';
-            btn.onclick = function() { gc.randomize(); };
-            return btn;
+        function createRandomizeButton(canvas) {
+            var button = document.createElement('button');
+            button.textContent = 'Randomize';
+            button.onclick = function() { canvas.randomize(); };
+            return button;
         }
-        function dlBtn(gc) {
-            var btn = document.createElement('button');
-            btn.textContent = 'Download';
-            btn.onclick = function() { gc.download(); };
-            return btn;
-        }
-
-        function addControls(gc) {
-            var div = document.createElement('div');
-            div.className = 'controls';
-            div.appendChild(playBtn(gc));
-            div.appendChild(pauseBtn(gc));
-            div.appendChild(randomBtn(gc));
-            div.appendChild(dlBtn(gc));
-            gc.parentElement.insertBefore(div, gc);
+        function createDownloadButton(canvas) {
+            var button = document.createElement('button');
+            button.textContent = 'Download';
+            button.onclick = function() { canvas.download(); };
+            return button;
         }
 
-        var autoPlayIds = [];
+        function addControls(canvas) {
+            var container = document.createElement('div');
+            container.className = 'controls';
+            container.appendChild(createPlayButton(canvas));
+            container.appendChild(createPauseButton(canvas));
+            container.appendChild(createRandomizeButton(canvas));
+            container.appendChild(createDownloadButton(canvas));
+            canvas.parentElement.insertBefore(container, canvas);
+        }
+
+        var observedCanvasIds = [];
         function autoPlayWhenVisible() {
             var observer = new IntersectionObserver(function(entries) {
                 entries.forEach(function(entry) {
-                    var gc = entry.target;
-                    if (entry.isIntersecting && gc.glitches && gc.glitches.length > 0) {
-                        gc.play();
+                    var canvas = entry.target;
+                    if (entry.isIntersecting && canvas.glitches && canvas.glitches.length > 0) {
+                        canvas.play();
                     } else {
-                        gc.pause();
+                        canvas.pause();
                     }
                 });
             }, { rootMargin: '50px' });
 
-            autoPlayIds.forEach(function(id) {
-                var el = document.getElementById(id);
-                if (el) observer.observe(el);
+            observedCanvasIds.forEach(function(id) {
+                var element = document.getElementById(id);
+                if (element) observer.observe(element);
             });
         }
     </script>
@@ -89,7 +89,7 @@
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-empty"></glitch-canvas>
+            <glitch-canvas id="demo-empty"></glitch-canvas>
         </div>
         <div class="code">
 <pre>&lt;script src="build/main.js"&gt;&lt;/script&gt;
@@ -108,7 +108,7 @@
     <h3>2a. <code>src</code> attribute</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-src" src="example.jpg" crossorigin="anonymous" buffer-size="1"></glitch-canvas>
+            <glitch-canvas id="demo-src" src="example.jpg" crossorigin="anonymous" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
             <p>Set <code>src</code> to load an image by URL. The image is fetched via <code>fetch()</code> and requires CORS headers.</p>
@@ -124,13 +124,13 @@
     <div class="demo-block">
         <div class="demo">
             <div class="controls">
-                <button onclick="document.getElementById('gc-load').load('example.jpg')">Load URL</button>
+                <button onclick="document.getElementById('demo-load').load('example.jpg')">Load URL</button>
             </div>
-            <glitch-canvas id="gc-load" buffer-size="1"></glitch-canvas>
+            <glitch-canvas id="demo-load" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
             <p>Call <code>load(url)</code> programmatically. Returns a Promise that rejects on network or CORS errors.</p>
-<pre>gc.load('example.jpg')
+<pre>glitchCanvas.load('example.jpg')
   .then(function() { /* ready */ })
   .catch(function(err) { console.error(err); });</pre>
         </div>
@@ -140,14 +140,14 @@
     <div class="demo-block">
         <div class="demo">
             <div class="controls">
-                <button onclick="document.getElementById('gc-clone-img').cloneFrom(document.getElementById('src-img'))">Clone from img</button>
+                <button onclick="document.getElementById('demo-clone-img').cloneFrom(document.getElementById('src-img'))">Clone from img</button>
             </div>
-            <glitch-canvas id="gc-clone-img" buffer-size="1"></glitch-canvas>
+            <glitch-canvas id="demo-clone-img" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
             <p>Capture from an existing <code>&lt;img&gt;</code> element:</p>
-<pre>var img = document.getElementById('my-img');
-gc.cloneFrom(img);</pre>
+<pre>var image = document.getElementById('my-img');
+glitchCanvas.cloneFrom(image);</pre>
         </div>
     </div>
 
@@ -155,13 +155,13 @@ gc.cloneFrom(img);</pre>
     <div class="demo-block">
         <div class="demo">
             <div class="controls">
-                <button onclick="var c=document.getElementById('gc-clone-canvas');c.cloneFrom(document.getElementById('src-img'))">Clone from canvas</button>
+                <button onclick="var target=document.getElementById('demo-clone-canvas');target.cloneFrom(document.getElementById('src-img'))">Clone from canvas</button>
             </div>
-            <glitch-canvas id="gc-clone-canvas" buffer-size="1"></glitch-canvas>
+            <glitch-canvas id="demo-clone-canvas" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
             <p>Works with <code>HTMLCanvasElement</code>, <code>HTMLImageElement</code>, and <code>HTMLPictureElement</code>.</p>
-<pre>gc.cloneFrom(canvasElement);</pre>
+<pre>glitchCanvas.cloneFrom(canvasElement);</pre>
         </div>
     </div>
 
@@ -171,42 +171,42 @@ gc.cloneFrom(img);</pre>
     <h3>3a. <code>fps</code></h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-fps" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-fps" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Playback frame rate. Default is <code>8</code>.</p>
 <pre>&lt;glitch-canvas fps="8"&gt;&lt;/glitch-canvas&gt;
 
 // Or set via property:
-gc.fps = 12;</pre>
+glitchCanvas.fps = 12;</pre>
         </div>
     </div>
 
     <h3>3b. <code>buffer-size</code></h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-buf" buffer-size="4"></glitch-canvas>
+            <glitch-canvas id="demo-buf" buffer-size="4"></glitch-canvas>
         </div>
         <div class="code">
             <p>Number of internal frame buffers. More buffers means smoother variation during playback. Default is <code>4</code>.</p>
 <pre>&lt;glitch-canvas buffer-size="4"&gt;&lt;/glitch-canvas&gt;
 
 // Or set via property:
-gc.bufferSize = 6;</pre>
+glitchCanvas.bufferSize = 6;</pre>
         </div>
     </div>
 
     <h3>3c. <code>quality</code></h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-quality" quality="0.3" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-quality" quality="0.3" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>JPEG encoding quality (0.01 to 1.0). Lower quality produces coarser JPEG artifacts, making glitch effects more dramatic. Default is <code>0.95</code>.</p>
 <pre>&lt;glitch-canvas quality="0.3"&gt;&lt;/glitch-canvas&gt;
 
 // Or via property:
-gc.quality = 0.5;</pre>
+glitchCanvas.quality = 0.5;</pre>
         </div>
     </div>
 
@@ -216,7 +216,7 @@ gc.quality = 0.5;</pre>
     <h3>4a. WidthGlitch</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-width" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-width" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Overwrites the image width byte in the SOF0 segment. Accepts a single <code>GlitchValue</code> only.</p>
@@ -225,14 +225,14 @@ gc.quality = 0.5;</pre>
   new G.GlitchValue(200),
 );
 glitch.randomizeMode = 'val';
-gc.addGlitch(glitch);</pre>
+glitchCanvas.addGlitch(glitch);</pre>
         </div>
     </div>
 
     <h3>4b. QuantumGlitch</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-quantum" quality="0.3" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-quantum" quality="0.3" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Substitutes a byte in the DQT quantization table. Single value only. Lower <code>quality</code> produces larger quantization values, making the effect visible.</p>
@@ -243,29 +243,29 @@ var glitch = new G.QuantumGlitch(
   new G.GlitchValue(80),
 );
 glitch.randomizeMode = 'both';
-gc.addGlitch(glitch);</pre>
+glitchCanvas.addGlitch(glitch);</pre>
         </div>
     </div>
 
     <h3>4c. QuantumGlitch + Quality Randomization</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-quality-rand" buffer-size="3"></glitch-canvas>
+            <glitch-canvas id="demo-quality-rand" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
             <p>Set <code>qualityRange</code> to randomize JPEG quality along with glitch parameters. Each call to <code>randomize()</code> re-encodes the source at a new quality, producing different JPEG structure and quantization values.</p>
-<pre>gc.qualityRange = { min: 0.1, max: 0.6 };
+<pre>glitchCanvas.qualityRange = { min: 0.1, max: 0.6 };
 
 var glitch = new G.QuantumGlitch(
   new G.Position(50),
   new G.GlitchValue(80),
 );
 glitch.randomizeMode = 'both';
-gc.addGlitch(glitch);
+glitchCanvas.addGlitch(glitch);
 
 // randomize() now also randomizes quality
 // and re-encodes the JPEG at the new quality
-gc.randomize();</pre>
+glitchCanvas.randomize();</pre>
         </div>
     </div>
 
@@ -275,7 +275,7 @@ gc.randomize();</pre>
     <h3>5a. ChaosGlitch (single value)</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-chaos-single" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-chaos-single" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Substitutes bytes in the SOS scan data. Can use a single <code>GlitchValue</code>:</p>
@@ -284,18 +284,18 @@ gc.randomize();</pre>
   new G.GlitchValue(200),
 );
 glitch.randomizeMode = 'val';
-gc.addGlitch(glitch);</pre>
+glitchCanvas.addGlitch(glitch);</pre>
         </div>
     </div>
 
     <h3>5b. ChaosGlitch (sequential distribution)</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-chaos-seq" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-chaos-seq" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>With <code>GlitchValueCollection</code> and sequential distribution, entries are written to consecutive pool indices.</p>
-<pre>var coll = new G.GlitchValueCollection(
+<pre>var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 150 },
@@ -303,11 +303,11 @@ gc.addGlitch(glitch);</pre>
   ],
   G.DistributionKind.Sequential,
 );
-coll.valueRange = { min: 50, max: 200 };
+collection.valueRange = { min: 50, max: 200 };
 
 var glitch = new G.ChaosGlitch(
   new G.Position(40),
-  coll,
+  collection,
 );
 glitch.randomizeMode = 'val';</pre>
         </div>
@@ -316,11 +316,11 @@ glitch.randomizeMode = 'val';</pre>
     <h3>5c. ChaosGlitch (random distribution)</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-chaos-rand" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-chaos-rand" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Random distribution scatters entries within a <code>spread</code> range around the base position.</p>
-<pre>var coll = new G.GlitchValueCollection(
+<pre>var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 180 },
@@ -328,13 +328,13 @@ glitch.randomizeMode = 'val';</pre>
   ],
   G.DistributionKind.Random,
 );
-coll.countRange = { min: 2, max: 6 };
-coll.valueRange = { min: 50, max: 220 };
-coll.spread = { min: 0, max: 100 };
+collection.countRange = { min: 2, max: 6 };
+collection.valueRange = { min: 50, max: 220 };
+collection.spread = { min: 0, max: 100 };
 
 var glitch = new G.ChaosGlitch(
   new G.Position(50),
-  coll,
+  collection,
 );
 glitch.randomizeMode = 'both';</pre>
         </div>
@@ -343,11 +343,11 @@ glitch.randomizeMode = 'both';</pre>
     <h3>5d. ChaosGlitch (uniform distribution)</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-chaos-uni" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-chaos-uni" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Uniform distribution spaces entries evenly across the full pool, giving maximum coverage.</p>
-<pre>var coll = new G.GlitchValueCollection(
+<pre>var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 180 },
@@ -356,11 +356,11 @@ glitch.randomizeMode = 'both';</pre>
   ],
   G.DistributionKind.Uniform,
 );
-coll.valueRange = { min: 50, max: 220 };
+collection.valueRange = { min: 50, max: 220 };
 
 var glitch = new G.ChaosGlitch(
   new G.Position(20),
-  coll,
+  collection,
 );
 glitch.randomizeMode = 'both';</pre>
         </div>
@@ -369,11 +369,11 @@ glitch.randomizeMode = 'both';</pre>
     <h3>5e. HuffmanGlitch</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-huffman" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-huffman" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Substitutes bytes in the DHT AC Huffman symbol table. Supports both single and multi-value.</p>
-<pre>var coll = new G.GlitchValueCollection(
+<pre>var collection = new G.GlitchValueCollection(
   [
     { value: 128 },
     { value: 64 },
@@ -381,12 +381,12 @@ glitch.randomizeMode = 'both';</pre>
   ],
   G.DistributionKind.Random,
 );
-coll.valueRange = { min: 0, max: 200 };
-coll.spread = { min: 0, max: 50 };
+collection.valueRange = { min: 0, max: 200 };
+collection.spread = { min: 0, max: 50 };
 
 var glitch = new G.HuffmanGlitch(
   new G.Position(30),
-  coll,
+  collection,
 );
 glitch.randomizeMode = 'both';</pre>
         </div>
@@ -397,11 +397,11 @@ glitch.randomizeMode = 'both';</pre>
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-ghost" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-ghost" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
             <p>Copies a block of scan data from a source offset to a target position. Always uses <code>GlitchValueCollection</code>. Each entry is one copy operation. <code>Offset</code> controls how far back the source is from the target.</p>
-<pre>var coll = new G.GlitchValueCollection(
+<pre>var collection = new G.GlitchValueCollection(
   [
     { value: 100 },
     { value: 200 },
@@ -409,13 +409,13 @@ glitch.randomizeMode = 'both';</pre>
   ],
   G.DistributionKind.Sequential,
 );
-coll.countRange = { min: 2, max: 5 };
-coll.valueRange = { min: 0, max: 254 };
+collection.countRange = { min: 2, max: 5 };
+collection.valueRange = { min: 0, max: 254 };
 
 var glitch = new G.GhostGlitch(
   new G.Position(50),
   new G.Offset(10),
-  coll,
+  collection,
 );
 glitch.randomizeMode = 'both';</pre>
         </div>
@@ -427,7 +427,7 @@ glitch.randomizeMode = 'both';</pre>
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-modes" buffer-size="3"></glitch-canvas>
+            <glitch-canvas id="demo-modes" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
 <pre>glitch.randomizeMode = 'none'; // static, no change
@@ -435,22 +435,22 @@ glitch.randomizeMode = 'val';  // randomize values
 glitch.randomizeMode = 'pos';  // randomize position
 glitch.randomizeMode = 'both'; // randomize both</pre>
             <p>Below: WidthGlitch with <code>'val'</code> + ChaosGlitch with <code>'both'</code>.</p>
-<pre>var w = new G.WidthGlitch(
+<pre>var widthGlitch = new G.WidthGlitch(
   new G.Position(0),
   new G.GlitchValue(200),
 );
-w.randomizeMode = 'val';
+widthGlitch.randomizeMode = 'val';
 
-var c = new G.ChaosGlitch(
+var chaosGlitch = new G.ChaosGlitch(
   new G.Position(50),
   new G.GlitchValueCollection(
     [{ value: 200 }, { value: 150 }],
     G.DistributionKind.Sequential,
   ),
 );
-c.val.valueRange = { min: 50, max: 220 };
-c.val.countRange = { min: 2, max: 8 };
-c.randomizeMode = 'both';</pre>
+chaosGlitch.val.valueRange = { min: 50, max: 220 };
+chaosGlitch.val.countRange = { min: 2, max: 8 };
+chaosGlitch.randomizeMode = 'both';</pre>
         </div>
     </div>
 
@@ -459,11 +459,11 @@ c.randomizeMode = 'both';</pre>
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-combined" buffer-size="3"></glitch-canvas>
+            <glitch-canvas id="demo-combined" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
             <p>Use <code>setGlitches()</code> to apply multiple glitch types. Use <code>addGlitch()</code> and <code>removeGlitch()</code> for individual management.</p>
-<pre>gc.setGlitches([
+<pre>glitchCanvas.setGlitches([
   new G.WidthGlitch(
     new G.Position(0),
     new G.GlitchValue(200),
@@ -492,17 +492,17 @@ c.randomizeMode = 'both';</pre>
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-playback" buffer-size="3"></glitch-canvas>
+            <glitch-canvas id="demo-playback" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
-<pre>gc.play();                  // start playback loop
-gc.pause();                 // stop playback
-gc.isPlaying;               // boolean, read-only
+<pre>glitchCanvas.play();                  // start playback loop
+glitchCanvas.pause();                 // stop playback
+glitchCanvas.isPlaying;               // boolean, read-only
 
-gc.randomize();             // randomize all glitch params, re-render
-gc.requestRender();         // re-render without randomizing
+glitchCanvas.randomize();             // randomize all glitch params, re-render
+glitchCanvas.requestRender();         // re-render without randomizing
 
-gc.download('output.jpg');  // export current frame as JPEG</pre>
+glitchCanvas.download('output.jpg');  // export current frame as JPEG</pre>
         </div>
     </div>
 
@@ -512,19 +512,19 @@ gc.download('output.jpg');  // export current frame as JPEG</pre>
 
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="gc-rerender" buffer-size="1"></glitch-canvas>
+            <glitch-canvas id="demo-rerender" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
 <pre>var glitch = new G.ChaosGlitch(
   new G.Position(50),
   new G.GlitchValue(200),
 );
-gc.addGlitch(glitch);
+glitchCanvas.addGlitch(glitch);
 
 // Later, change a parameter:
 glitch.position = new G.Position(75);
 glitch.val = new G.GlitchValue(100);
-gc.requestRender();</pre>
+glitchCanvas.requestRender();</pre>
         </div>
     </div>
 
@@ -577,162 +577,162 @@ DistributionKind.Random                // scattered within spread range
 DistributionKind.Uniform               // evenly spaced across pool</pre>
 
     <h3>GlitchValueCollection Config</h3>
-<pre>coll.valueRange = { min: 0, max: 254 };    // value range for randomize()
-coll.countRange = { min: 2, max: 8 };       // entry count range for randomize()
-coll.spread = { min: 0, max: 100 };         // spread range (Random dist only)
-coll.randomize();                            // regenerate entries
-coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
+<pre>collection.valueRange = { min: 0, max: 254 };    // value range for randomize()
+collection.countRange = { min: 2, max: 8 };       // entry count range for randomize()
+collection.spread = { min: 0, max: 100 };         // spread range (Random dist only)
+collection.randomize();                            // regenerate entries
+collection.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
 
     <!-- ============================================================ -->
     <script>
-        var srcImg = document.getElementById('src-img');
+        var sourceImage = document.getElementById('src-img');
 
         function initAll() {
             // 3a. fps demo
-            var gcFps = document.getElementById('gc-fps');
-            var fpsG = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
-            fpsG.randomizeMode = 'val';
-            gcFps.addGlitch(fpsG);
-            gcFps.cloneFrom(srcImg);
-            addControls(gcFps);
+            var fpsCanvas = document.getElementById('demo-fps');
+            var fpsGlitch = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
+            fpsGlitch.randomizeMode = 'val';
+            fpsCanvas.addGlitch(fpsGlitch);
+            fpsCanvas.cloneFrom(sourceImage);
+            addControls(fpsCanvas);
 
             // 3b. buffer-size demo
-            var gcBuf = document.getElementById('gc-buf');
-            var bufG = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(180));
-            bufG.randomizeMode = 'both';
-            gcBuf.addGlitch(bufG);
-            gcBuf.cloneFrom(srcImg);
-            addControls(gcBuf);
+            var bufferCanvas = document.getElementById('demo-buf');
+            var bufferGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(180));
+            bufferGlitch.randomizeMode = 'both';
+            bufferCanvas.addGlitch(bufferGlitch);
+            bufferCanvas.cloneFrom(sourceImage);
+            addControls(bufferCanvas);
 
             // 3c. quality demo
-            var gcQl = document.getElementById('gc-quality');
-            var qlG = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
-            qlG.randomizeMode = 'both';
-            gcQl.addGlitch(qlG);
-            gcQl.cloneFrom(srcImg);
-            addControls(gcQl);
+            var qualityCanvas = document.getElementById('demo-quality');
+            var qualityGlitch = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
+            qualityGlitch.randomizeMode = 'both';
+            qualityCanvas.addGlitch(qualityGlitch);
+            qualityCanvas.cloneFrom(sourceImage);
+            addControls(qualityCanvas);
 
             // 4a. WidthGlitch
-            var gcW = document.getElementById('gc-width');
-            var w = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
-            w.randomizeMode = 'val';
-            gcW.addGlitch(w);
-            gcW.cloneFrom(srcImg);
-            addControls(gcW);
+            var widthCanvas = document.getElementById('demo-width');
+            var widthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            widthGlitch.randomizeMode = 'val';
+            widthCanvas.addGlitch(widthGlitch);
+            widthCanvas.cloneFrom(sourceImage);
+            addControls(widthCanvas);
 
             // 4b. QuantumGlitch
-            var gcQ = document.getElementById('gc-quantum');
-            var q = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
-            q.randomizeMode = 'both';
-            gcQ.addGlitch(q);
-            gcQ.cloneFrom(srcImg);
-            addControls(gcQ);
+            var quantumCanvas = document.getElementById('demo-quantum');
+            var quantumGlitch = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
+            quantumGlitch.randomizeMode = 'both';
+            quantumCanvas.addGlitch(quantumGlitch);
+            quantumCanvas.cloneFrom(sourceImage);
+            addControls(quantumCanvas);
 
             // 4c. QuantumGlitch + Quality Randomization
-            var gcQR = document.getElementById('gc-quality-rand');
-            gcQR.qualityRange = { min: 0.1, max: 0.6 };
-            var qr = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
-            qr.randomizeMode = 'both';
-            gcQR.addGlitch(qr);
-            gcQR.cloneFrom(srcImg);
-            addControls(gcQR);
+            var qualityRandCanvas = document.getElementById('demo-quality-rand');
+            qualityRandCanvas.qualityRange = { min: 0.1, max: 0.6 };
+            var qualityRandGlitch = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
+            qualityRandGlitch.randomizeMode = 'both';
+            qualityRandCanvas.addGlitch(qualityRandGlitch);
+            qualityRandCanvas.cloneFrom(sourceImage);
+            addControls(qualityRandCanvas);
 
             // 5a. ChaosGlitch single
-            var gcCS = document.getElementById('gc-chaos-single');
-            var cs = new G.ChaosGlitch(new G.Position(30), new G.GlitchValue(200));
-            cs.randomizeMode = 'val';
-            gcCS.addGlitch(cs);
-            gcCS.cloneFrom(srcImg);
-            addControls(gcCS);
+            var chaosSingleCanvas = document.getElementById('demo-chaos-single');
+            var chaosSingleGlitch = new G.ChaosGlitch(new G.Position(30), new G.GlitchValue(200));
+            chaosSingleGlitch.randomizeMode = 'val';
+            chaosSingleCanvas.addGlitch(chaosSingleGlitch);
+            chaosSingleCanvas.cloneFrom(sourceImage);
+            addControls(chaosSingleCanvas);
 
             // 5b. ChaosGlitch sequential
-            var gcCSeq = document.getElementById('gc-chaos-seq');
-            var collSeq = new G.GlitchValueCollection(
+            var chaosSeqCanvas = document.getElementById('demo-chaos-seq');
+            var seqCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 150 }, { value: 100 }],
                 G.DistributionKind.Sequential,
             );
-            collSeq.valueRange = { min: 50, max: 200 };
-            var cseq = new G.ChaosGlitch(new G.Position(40), collSeq);
-            cseq.randomizeMode = 'val';
-            gcCSeq.addGlitch(cseq);
-            gcCSeq.cloneFrom(srcImg);
-            addControls(gcCSeq);
+            seqCollection.valueRange = { min: 50, max: 200 };
+            var chaosSeqGlitch = new G.ChaosGlitch(new G.Position(40), seqCollection);
+            chaosSeqGlitch.randomizeMode = 'val';
+            chaosSeqCanvas.addGlitch(chaosSeqGlitch);
+            chaosSeqCanvas.cloneFrom(sourceImage);
+            addControls(chaosSeqCanvas);
 
             // 5c. ChaosGlitch random
-            var gcCR = document.getElementById('gc-chaos-rand');
-            var collRand = new G.GlitchValueCollection(
+            var chaosRandCanvas = document.getElementById('demo-chaos-rand');
+            var randCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 180 }, { value: 160 }],
                 G.DistributionKind.Random,
             );
-            collRand.countRange = { min: 2, max: 6 };
-            collRand.valueRange = { min: 50, max: 220 };
-            collRand.spread = { min: 0, max: 100 };
-            var cr = new G.ChaosGlitch(new G.Position(50), collRand);
-            cr.randomizeMode = 'both';
-            gcCR.addGlitch(cr);
-            gcCR.cloneFrom(srcImg);
-            addControls(gcCR);
+            randCollection.countRange = { min: 2, max: 6 };
+            randCollection.valueRange = { min: 50, max: 220 };
+            randCollection.spread = { min: 0, max: 100 };
+            var chaosRandGlitch = new G.ChaosGlitch(new G.Position(50), randCollection);
+            chaosRandGlitch.randomizeMode = 'both';
+            chaosRandCanvas.addGlitch(chaosRandGlitch);
+            chaosRandCanvas.cloneFrom(sourceImage);
+            addControls(chaosRandCanvas);
 
             // 5d. ChaosGlitch uniform
-            var gcCU = document.getElementById('gc-chaos-uni');
-            var collUni = new G.GlitchValueCollection(
+            var chaosUniCanvas = document.getElementById('demo-chaos-uni');
+            var uniCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 180 }, { value: 160 }, { value: 140 }],
                 G.DistributionKind.Uniform,
             );
-            collUni.valueRange = { min: 50, max: 220 };
-            var cu = new G.ChaosGlitch(new G.Position(20), collUni);
-            cu.randomizeMode = 'both';
-            gcCU.addGlitch(cu);
-            gcCU.cloneFrom(srcImg);
-            addControls(gcCU);
+            uniCollection.valueRange = { min: 50, max: 220 };
+            var chaosUniGlitch = new G.ChaosGlitch(new G.Position(20), uniCollection);
+            chaosUniGlitch.randomizeMode = 'both';
+            chaosUniCanvas.addGlitch(chaosUniGlitch);
+            chaosUniCanvas.cloneFrom(sourceImage);
+            addControls(chaosUniCanvas);
 
             // 5e. HuffmanGlitch
-            var gcH = document.getElementById('gc-huffman');
-            var collH = new G.GlitchValueCollection(
+            var huffmanCanvas = document.getElementById('demo-huffman');
+            var huffmanCollection = new G.GlitchValueCollection(
                 [{ value: 128 }, { value: 64 }, { value: 192 }],
                 G.DistributionKind.Random,
             );
-            collH.valueRange = { min: 0, max: 200 };
-            collH.spread = { min: 0, max: 50 };
-            var h = new G.HuffmanGlitch(new G.Position(30), collH);
-            h.randomizeMode = 'both';
-            gcH.addGlitch(h);
-            gcH.cloneFrom(srcImg);
-            addControls(gcH);
+            huffmanCollection.valueRange = { min: 0, max: 200 };
+            huffmanCollection.spread = { min: 0, max: 50 };
+            var huffmanGlitch = new G.HuffmanGlitch(new G.Position(30), huffmanCollection);
+            huffmanGlitch.randomizeMode = 'both';
+            huffmanCanvas.addGlitch(huffmanGlitch);
+            huffmanCanvas.cloneFrom(sourceImage);
+            addControls(huffmanCanvas);
 
             // 6. GhostGlitch
-            var gcGhost = document.getElementById('gc-ghost');
-            var collGh = new G.GlitchValueCollection(
+            var ghostCanvas = document.getElementById('demo-ghost');
+            var ghostCollection = new G.GlitchValueCollection(
                 [{ value: 100 }, { value: 200 }, { value: 50 }],
                 G.DistributionKind.Sequential,
             );
-            collGh.countRange = { min: 2, max: 5 };
-            collGh.valueRange = { min: 0, max: 254 };
-            var gh = new G.GhostGlitch(new G.Position(50), new G.Offset(10), collGh);
-            gh.randomizeMode = 'both';
-            gcGhost.addGlitch(gh);
-            gcGhost.cloneFrom(srcImg);
-            addControls(gcGhost);
+            ghostCollection.countRange = { min: 2, max: 5 };
+            ghostCollection.valueRange = { min: 0, max: 254 };
+            var ghostGlitch = new G.GhostGlitch(new G.Position(50), new G.Offset(10), ghostCollection);
+            ghostGlitch.randomizeMode = 'both';
+            ghostCanvas.addGlitch(ghostGlitch);
+            ghostCanvas.cloneFrom(sourceImage);
+            addControls(ghostCanvas);
 
             // 7. Randomization modes
-            var gcModes = document.getElementById('gc-modes');
-            var wMode = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
-            wMode.randomizeMode = 'val';
-            var collMode = new G.GlitchValueCollection(
+            var modesCanvas = document.getElementById('demo-modes');
+            var modeWidthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            modeWidthGlitch.randomizeMode = 'val';
+            var modeCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 150 }],
                 G.DistributionKind.Sequential,
             );
-            collMode.valueRange = { min: 50, max: 220 };
-            collMode.countRange = { min: 2, max: 8 };
-            var cMode = new G.ChaosGlitch(new G.Position(50), collMode);
-            cMode.randomizeMode = 'both';
-            gcModes.setGlitches([wMode, cMode]);
-            gcModes.cloneFrom(srcImg);
-            addControls(gcModes);
+            modeCollection.valueRange = { min: 50, max: 220 };
+            modeCollection.countRange = { min: 2, max: 8 };
+            var modeChaosGlitch = new G.ChaosGlitch(new G.Position(50), modeCollection);
+            modeChaosGlitch.randomizeMode = 'both';
+            modesCanvas.setGlitches([modeWidthGlitch, modeChaosGlitch]);
+            modesCanvas.cloneFrom(sourceImage);
+            addControls(modesCanvas);
 
             // 8. Combined
-            var gcComb = document.getElementById('gc-combined');
-            gcComb.setGlitches([
+            var combinedCanvas = document.getElementById('demo-combined');
+            combinedCanvas.setGlitches([
                 new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200)),
                 new G.ChaosGlitch(
                     new G.Position(40),
@@ -744,41 +744,41 @@ coll.resolve(pool, baseIdx);                 // get concrete byte indices</pre>
                 new G.QuantumGlitch(new G.Position(30), new G.GlitchValue(180)),
                 new G.QuantumGlitch(new G.Position(70), new G.GlitchValue(60)),
             ]);
-            gcComb.cloneFrom(srcImg);
-            addControls(gcComb);
+            combinedCanvas.cloneFrom(sourceImage);
+            addControls(combinedCanvas);
 
             // 9. Playback controls
-            var gcPB = document.getElementById('gc-playback');
-            var wPB = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
-            wPB.randomizeMode = 'val';
-            var cPB = new G.ChaosGlitch(
+            var playbackCanvas = document.getElementById('demo-playback');
+            var playbackWidthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
+            playbackWidthGlitch.randomizeMode = 'val';
+            var playbackChaosGlitch = new G.ChaosGlitch(
                 new G.Position(45),
                 new G.GlitchValueCollection(
                     [{ value: 200 }, { value: 160 }, { value: 120 }],
                     G.DistributionKind.Random,
                 ),
             );
-            cPB.val.valueRange = { min: 50, max: 220 };
-            cPB.val.spread = { min: 0, max: 80 };
-            cPB.randomizeMode = 'both';
-            gcPB.setGlitches([wPB, cPB]);
-            gcPB.cloneFrom(srcImg);
-            addControls(gcPB);
+            playbackChaosGlitch.val.valueRange = { min: 50, max: 220 };
+            playbackChaosGlitch.val.spread = { min: 0, max: 80 };
+            playbackChaosGlitch.randomizeMode = 'both';
+            playbackCanvas.setGlitches([playbackWidthGlitch, playbackChaosGlitch]);
+            playbackCanvas.cloneFrom(sourceImage);
+            addControls(playbackCanvas);
 
             // 10. Re-render demo
-            var gcRR = document.getElementById('gc-rerender');
-            var rrGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200));
-            gcRR.addGlitch(rrGlitch);
-            gcRR.cloneFrom(srcImg);
-            addControls(gcRR);
+            var rerenderCanvas = document.getElementById('demo-rerender');
+            var rerenderGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200));
+            rerenderCanvas.addGlitch(rerenderGlitch);
+            rerenderCanvas.cloneFrom(sourceImage);
+            addControls(rerenderCanvas);
 
             autoPlayWhenVisible();
         }
 
-        if (srcImg.complete && srcImg.naturalWidth) {
+        if (sourceImage.complete && sourceImage.naturalWidth) {
             initAll();
         } else {
-            srcImg.onload = initAll;
+            sourceImage.onload = initAll;
         }
     </script>
 </body>
