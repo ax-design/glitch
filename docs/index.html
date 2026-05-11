@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Glitch Canvas Example</title>
+</head>
+<body>
+    <h1>Glitch Canvas Demo</h1>
+
+    <img id="source" src="https://upload.wikimedia.org/wikipedia/commons/thumb/4/47/PNG_transparency_demonstration_1.png/280px-PNG_transparency_demonstration_1.png" crossorigin="anonymous">
+    <br>
+    <glitch-canvas id="gc" fps="12" buffer-size="4"></glitch-canvas>
+
+    <br>
+    <button id="btn-clone">Clone from img</button>
+    <button id="btn-play">Play</button>
+    <button id="btn-pause">Pause</button>
+    <button id="btn-randomize">Randomize</button>
+
+    <script type="module">
+        import {
+            register, ChaosGlitch, QuantumGlitch, WidthGlitch,
+            HuffmanGlitch, GhostGlitch, Offset,
+            Position, GlitchValue, GlitchValueCollection,
+            DistributionKind,
+        } from '../build/main.js';
+
+        register();
+
+        const gc = document.getElementById('gc');
+
+        gc.addGlitch(new WidthGlitch(new Position(0), new GlitchValue(200)));
+
+        gc.addGlitch(new ChaosGlitch(
+            new Position(55),
+            new GlitchValueCollection(
+                [{ value: 200 }, { value: 150 }, { value: 100 }],
+                DistributionKind.Sequential,
+            ),
+        ));
+
+        gc.addGlitch(new QuantumGlitch(new Position(50), new GlitchValue(80)));
+
+        document.getElementById('btn-clone').onclick = () => {
+            gc.cloneFrom(document.getElementById('source'));
+        };
+        document.getElementById('btn-play').onclick = () => gc.play();
+        document.getElementById('btn-pause').onclick = () => gc.pause();
+        document.getElementById('btn-randomize').onclick = () => gc.randomize();
+    </script>
+</body>
+</html>
