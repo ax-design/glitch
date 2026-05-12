@@ -1,4 +1,5 @@
 import typescript from '@rollup/plugin-typescript';
+import { nodeResolve } from '@rollup/plugin-node-resolve';
 
 const config = {
     input: ['./src/index.ts'],
@@ -8,11 +9,14 @@ const config = {
         name: 'AxGlitch',
         sourcemap: true,
     },
-    plugins: [typescript({
-        outDir: 'build',
-        declaration: false,
-        declarationMap: false,
-    })],
+    plugins: [
+        nodeResolve(),
+        typescript({
+            outDir: 'build',
+            declaration: false,
+            declarationMap: false,
+        }),
+    ],
 };
 
 export default config;

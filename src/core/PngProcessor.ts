@@ -1,3 +1,5 @@
+import { unzlibSync, zlibSync } from 'fflate';
+
 export interface ScanlineInfo {
     filterTypeOffset: number;
     dataStart: number;
@@ -123,35 +125,11 @@ export function parsePngChunks(bytes: Uint8Array): PngChunkLayout {
 }
 
 export async function inflateCompressed(data: Uint8Array): Promise<Uint8Array> {
-    const stream = new DecompressionStream('deflate');
-    const writer = stream.writable.getWriter();
-    writer.write(data as unknown as BufferSource);
-    writer.close();
-
-    const reader = stream.readable.getReader();
-    const chunks: Uint8Array[] = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    return concatUint8Arrays(chunks);
+    return unzlibSync(data);
 }
 
 export async function deflateFiltered(data: Uint8Array): Promise<Uint8Array> {
-    const stream = new CompressionStream('deflate');
-    const writer = stream.writable.getWriter();
-    writer.write(data as unknown as BufferSource);
-    writer.close();
-
-    const reader = stream.readable.getReader();
-    const chunks: Uint8Array[] = [];
-    while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        chunks.push(value);
-    }
-    return concatUint8Arrays(chunks);
+    return zlibSync(data, { level: 1 });
 }
 
 export function computeScanlines(filteredData: Uint8Array, metadata: PngMetadata): ScanlineInfo[] {
