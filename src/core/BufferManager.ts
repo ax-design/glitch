@@ -2,6 +2,7 @@ import type { GlitchDomain, DomainState } from '../domain/types.js';
 import type { BaseGlitch } from '../glitch/BaseGlitch.js';
 import { GlitchValue } from '../params/GlitchValue.js';
 import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
+import { DensityValue } from '../params/DensityValue.js';
 import { Position } from '../params/Position.js';
 
 interface Buffer {
@@ -214,6 +215,8 @@ export class BufferManager {
                 if ('val' in glitch) {
                     const val = (glitch as any).val;
                     if (val instanceof GlitchValueCollection) {
+                        val.randomize();
+                    } else if (val instanceof DensityValue) {
                         val.randomize();
                     } else if (val instanceof GlitchValue) {
                         val.randomize();

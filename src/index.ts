@@ -10,6 +10,7 @@ export { Position } from './params/Position.js';
 export { Offset } from './params/Offset.js';
 export { GlitchValue } from './params/GlitchValue.js';
 export { GlitchValueCollection } from './params/GlitchValueCollection.js';
+export { DensityValue } from './params/DensityValue.js';
 export { DistributionKind } from './params/Distribution.js';
 export type { Range } from './params/Range.js';
 export type { ValueEntry } from './params/GlitchValueCollection.js';

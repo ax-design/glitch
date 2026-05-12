@@ -366,6 +366,71 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
         </div>
     </div>
 
+    <h3>5e. CustomFilterGlitch <span style="font-weight:normal;color:#888">(PNG)</span></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="demo-png-custom-filter" buffer-size="2"></glitch-canvas>
+        </div>
+        <div class="code">
+            <p>Re-encodes scanlines with a custom filter function instead of the standard PNG filters. The decoder still uses standard filter reconstruction, creating systematic algorithmic deviation across the image. Optionally target a <code>scanlineRange</code> to affect only some rows.</p>
+<pre>// Custom filter: XOR each byte with its left neighbor
+var customEncoder = function(data, prev, sampleSize) {
+  var result = new Uint8Array(data);
+  for (var i = sampleSize; i < data.length; i++) {
+    result[i] = (data[i] ^ data[i - sampleSize]) & 0xff;
+  }
+  return result;
+};
+
+var glitch = new G.CustomFilterGlitch(customEncoder);
+glitchCanvas.addGlitch(glitch, 'png');</pre>
+        </div>
+    </div>
+
+    <h3>5f. Filter Type Comparison <span style="font-weight:normal;color:#888">(PNG)</span></h3>
+    <p>Same glitch, different forced filter type during encoding. Each uses <code>DensityValue(0.02)</code> to target 2% of all pixels automatically.</p>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="demo-filter-none" buffer-size="2"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0">None</p>
+        </div>
+        <div class="demo">
+            <glitch-canvas id="demo-filter-sub" buffer-size="2"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0">Sub</p>
+        </div>
+        <div class="demo">
+            <glitch-canvas id="demo-filter-up" buffer-size="2"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0">Up</p>
+        </div>
+        <div class="demo">
+            <glitch-canvas id="demo-filter-avg" buffer-size="2"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0">Average</p>
+        </div>
+        <div class="demo">
+            <glitch-canvas id="demo-filter-paeth" buffer-size="2"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0">Paeth</p>
+        </div>
+        <div class="code">
+<pre>var density = new G.DensityValue(0.02, { min: 50, max: 230 });
+
+var filters = [
+  [G.PngFilterType.None, 'None'],
+  [G.PngFilterType.Sub,  'Sub'],
+  [G.PngFilterType.Up,   'Up'],
+  [G.PngFilterType.Average, 'Average'],
+  [G.PngFilterType.Paeth,   'Paeth'],
+];
+filters.forEach(function([type, name]) {
+  var glitch = new G.FilterDataGlitch(
+    new G.Position(50), density,
+  );
+  glitch.randomizeMode = 'both';
+  glitchCanvas.addGlitch(glitch, 'png');
+  glitchCanvas.enableDomain('png', { filterType: type });
+});</pre>
+        </div>
+    </div>
+
     <!-- ============================================================ -->
     <h2>6. Multi-Value Glitch Types</h2>
 
@@ -495,17 +560,12 @@ glitch.randomizeMode = 'both';</pre>
             <glitch-canvas id="demo-png-filterdata" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Replaces bytes in decompressed filtered scanline data. Propagation direction depends on the filter type used during encoding. Use <code>GlitchValueCollection</code> with <code>Uniform</code> distribution to spread corruption across the entire image for visible multi-line effects.</p>
-<pre>var collection = new G.GlitchValueCollection(
-  [{ value: 200 }, { value: 150 }, { value: 100 },
-   { value: 180 }, { value: 120 }, { value: 160 }],
-  G.DistributionKind.Uniform,
-);
-collection.valueRange = { min: 50, max: 230 };
+            <p>Replaces bytes in decompressed filtered scanline data. Propagation direction depends on the filter type used during encoding. Use <code>DensityValue</code> to auto-generate sites proportional to image size.</p>
+<pre>var density = new G.DensityValue(0.01, { min: 50, max: 230 });
 
 var glitch = new G.FilterDataGlitch(
   new G.Position(20),
-  collection,
+  density,
 );
 glitch.randomizeMode = 'both';
 glitchCanvas.addGlitch(glitch, 'png');</pre>
@@ -518,17 +578,12 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
             <glitch-canvas id="demo-png-defect" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Overwrites bytes in filtered data with targeted values. Unlike FilterDataGlitch which replaces single bytes at precise positions, DefectGlitch zeroes out or replaces byte clusters, creating dense corruption patches.</p>
-<pre>var collection = new G.GlitchValueCollection(
-  [{ value: 0 }, { value: 255 }, { value: 0 },
-   { value: 255 }, { value: 0 }],
-  G.DistributionKind.Uniform,
-);
-collection.valueRange = { min: 0, max: 255 };
+            <p>Overwrites bytes in filtered data with targeted values. Creates dense corruption patches spread across the image via <code>DensityValue</code>.</p>
+<pre>var density = new G.DensityValue(0.005, { min: 0, max: 255 });
 
 var glitch = new G.DefectGlitch(
   new G.Position(30),
-  collection,
+  density,
 );
 glitch.randomizeMode = 'both';
 glitchCanvas.addGlitch(glitch, 'png');</pre>
@@ -762,6 +817,7 @@ glitchCanvas.disableDomain('png');
 GlitchValue(value: number)             // 0 to 254, single byte
 Offset(value: number)                  // integer, source distance for GhostGlitch
 GlitchValueCollection(entries, dist?)  // multi-value with distribution strategy
+DensityValue(density, valueRange?)     // auto-generate sites proportional to pool size
 DistributionKind.Sequential            // consecutive pool indices
 DistributionKind.Random                // scattered within spread range
 DistributionKind.Uniform               // evenly spaced across pool</pre>
@@ -772,6 +828,12 @@ collection.countRange = { min: 2, max: 8 };      // entry count range for random
 collection.spread = { min: 0, max: 100 };        // spread range (Random dist only)
 collection.randomize();                          // regenerate entries
 collection.resolve(pool, baseIdx);               // get concrete byte indices</pre>
+
+    <h3>DensityValue</h3>
+<pre>var density = new G.DensityValue(0.02, { min: 50, max: 230 });
+// 0.02 = target 2% of all pixels, values randomized within [50, 230]
+// Works wherever GlitchValueCollection is accepted
+// No need to manually specify entry arrays — count scales with image size</pre>
 
     <!-- ============================================================ -->
     <script>
@@ -892,6 +954,39 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             pngGraftCanvas.enableDomain('png');
             addControls(pngGraftCanvas);
 
+            // 5e. CustomFilterGlitch (PNG)
+            var customFilterCanvas = document.getElementById('demo-png-custom-filter');
+            var customEncoder = function(data, prev, sampleSize) {
+                var result = new Uint8Array(data);
+                for (var i = sampleSize; i < data.length; i++) {
+                    result[i] = (data[i] ^ data[i - sampleSize]) & 0xff;
+                }
+                return result;
+            };
+            var customFilterGlitch = new G.CustomFilterGlitch(customEncoder);
+            customFilterCanvas.addGlitch(customFilterGlitch, 'png');
+            customFilterCanvas.cloneFrom(sourceImage);
+            customFilterCanvas.enableDomain('png', { filterType: G.PngFilterType.Sub });
+            addControls(customFilterCanvas);
+
+            // 5f. Filter Type Comparison (PNG)
+            var filterDensity = new G.DensityValue(0.02, { min: 50, max: 230 });
+            [
+                ['demo-filter-none', G.PngFilterType.None],
+                ['demo-filter-sub', G.PngFilterType.Sub],
+                ['demo-filter-up', G.PngFilterType.Up],
+                ['demo-filter-avg', G.PngFilterType.Average],
+                ['demo-filter-paeth', G.PngFilterType.Paeth],
+            ].forEach(function(pair) {
+                var canvas = document.getElementById(pair[0]);
+                var glitch = new G.FilterDataGlitch(new G.Position(50), filterDensity);
+                glitch.randomizeMode = 'both';
+                canvas.addGlitch(glitch, 'png');
+                canvas.cloneFrom(sourceImage);
+                canvas.enableDomain('png', { filterType: pair[1] });
+                addControls(canvas);
+            });
+
             // 6a. ChaosGlitch single
             var chaosSingleCanvas = document.getElementById('demo-chaos-single');
             var chaosSingleGlitch = new G.ChaosGlitch(new G.Position(30), new G.GlitchValue(200));
@@ -957,15 +1052,10 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 
             // 6f. FilterDataGlitch (PNG)
             var pngFdCanvas = document.getElementById('demo-png-filterdata');
-            var fdCollection = new G.GlitchValueCollection(
-                [{ value: 200 }, { value: 150 }, { value: 100 },
-                 { value: 180 }, { value: 120 }, { value: 160 }],
-                G.DistributionKind.Uniform,
-            );
-            fdCollection.valueRange = { min: 50, max: 230 };
+            var fdDensity = new G.DensityValue(0.01, { min: 50, max: 230 });
             var pngFdGlitch = new G.FilterDataGlitch(
                 new G.Position(20),
-                fdCollection,
+                fdDensity,
             );
             pngFdGlitch.randomizeMode = 'both';
             pngFdCanvas.addGlitch(pngFdGlitch, 'png');
@@ -975,15 +1065,10 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 
             // 6g. DefectGlitch (PNG)
             var pngDefectCanvas = document.getElementById('demo-png-defect');
-            var defectCollection = new G.GlitchValueCollection(
-                [{ value: 0 }, { value: 255 }, { value: 0 },
-                 { value: 255 }, { value: 0 }],
-                G.DistributionKind.Uniform,
-            );
-            defectCollection.valueRange = { min: 0, max: 255 };
+            var defectDensity = new G.DensityValue(0.005, { min: 0, max: 255 });
             var pngDefectGlitch = new G.DefectGlitch(
                 new G.Position(30),
-                defectCollection,
+                defectDensity,
             );
             pngDefectGlitch.randomizeMode = 'both';
             pngDefectCanvas.addGlitch(pngDefectGlitch, 'png');

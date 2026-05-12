@@ -308,13 +308,16 @@ export class GlitchCanvas extends HTMLElement {
 
         this._initialized = true;
 
-        await this._bufferManager.enableDomain(
-            'jpeg',
-            this._sourceCanvas,
-            this._imageWidth,
-            this._imageHeight,
-            { quality: this._quality },
-        );
+        // Only enable the default jpeg domain if no domain has been explicitly enabled yet
+        if (!this._bufferManager.ready) {
+            await this._bufferManager.enableDomain(
+                'jpeg',
+                this._sourceCanvas,
+                this._imageWidth,
+                this._imageHeight,
+                { quality: this._quality },
+            );
+        }
 
         for (const [domainId, glitches] of this._domainGlitches) {
             this._bufferManager.setDomainGlitches(domainId, glitches);
