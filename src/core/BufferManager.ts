@@ -313,6 +313,14 @@ export class BufferManager {
         if (loaded) {
             const ctx = canvas.getContext('2d')!;
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+        } else {
+            const glitchSummary = glitches.map(g =>
+                `${g.type}@${g.targetPool}(pos=${g.position.value.toFixed(1)})`
+            ).join(', ');
+            console.warn(
+                `[BufferManager] Decode failed: domain=${domain.id}, ` +
+                `${glitchSummary}, bytes=${resultBytes.length}`
+            );
         }
 
         return canvas;

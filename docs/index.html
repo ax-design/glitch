@@ -212,7 +212,7 @@ glitchCanvas.bufferSize = 6;</pre>
 
     <!-- ============================================================ -->
     <h2>4. Domain Management</h2>
-    <p>Glitch Canvas uses <strong>domains</strong> to manage glitch types. Each domain is an independent instance — you can add multiple PNG or JPEG domains with different settings. Call <code>addDomain()</code> to create a domain handle, then add glitches to it.</p>
+    <p>Glitch Canvas uses <strong>domains</strong> to manage glitch types. Each domain is an independent instance, you can add multiple PNG or JPEG domains with different settings. Call <code>addDomain()</code> to create a domain handle, then add glitches to it.</p>
 
     <h3>4a. Adding a PNG Domain</h3>
     <div class="demo-block">
@@ -588,7 +588,7 @@ domain.addGlitch(glitch);</pre>
             <glitch-canvas id="demo-png-defect" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Deletes bytes from filtered data and shifts all subsequent bytes forward (like pnglitch's Defect). This cascading shift misaligns scanline boundaries — the decoder interprets shifted data with potentially wrong filter types, producing progressive displacement artifacts. Filter type bytes are randomized to 0-4 after the shift to keep the PNG decodable.</p>
+            <p>Deletes bytes from filtered data and shifts all subsequent bytes forward (like pnglitch's Defect). This cascading shift misaligns scanline boundaries, the decoder interprets shifted data with potentially wrong filter types, producing progressive displacement artifacts. Filter type bytes are randomized to 0-4 after the shift to keep the PNG decodable.</p>
 <pre>var domain = canvas.addDomain(new G.PngDomain());
 var density = new G.DensityValue(0.03);
 
@@ -880,7 +880,7 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 // 0.05 = target 5% of all pixels, values randomized within [50, 230]
 // Distribution defaults to Random (can pass DistributionKind.Uniform etc.)
 // Works wherever GlitchValueCollection is accepted
-// No need to manually specify entry arrays — count scales with image size</pre>
+// No need to manually specify entry arrays, count scales with image size</pre>
 
     <!-- ============================================================ -->
     <script>

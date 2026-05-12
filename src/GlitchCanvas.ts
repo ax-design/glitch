@@ -35,6 +35,13 @@ export class GlitchCanvas extends HTMLElement {
     private _imageHeight = 0;
     private _renderDebounce: number | null = null;
     private _initialized = false;
+    private _rendered = false;
+
+    private _emitRendered(): void {
+        if (this._rendered) return;
+        this._rendered = true;
+        this.dispatchEvent(new CustomEvent('glitch-render', { bubbles: true }));
+    }
     private _initObserver: IntersectionObserver | null = null;
 
     static get observedAttributes(): string[] {
@@ -166,10 +173,10 @@ export class GlitchCanvas extends HTMLElement {
         this._handles.set(id, handle);
 
         if (this._sourceCanvas) {
-            // Image already loaded — initialize immediately
+            // Image already loaded, initialize immediately
             this._initDomain(id, handle, domain, options);
         } else {
-            // No image yet — queue for initialization
+            // No image yet, queue for initialization
             this._pendingDomains.push({ id, handle, domain, options });
         }
 
@@ -329,6 +336,8 @@ export class GlitchCanvas extends HTMLElement {
                 ctx.drawImage(frame.canvas, 0, 0);
             }
 
+            this._emitRendered();
+
             if (this._autoplay) {
                 this.play();
             }
@@ -336,6 +345,7 @@ export class GlitchCanvas extends HTMLElement {
             if (err.message !== 'superseded') {
                 console.warn('GlitchCanvas setSource render failed:', err);
             }
+            this._emitRendered();
         });
     }
 
@@ -388,10 +398,12 @@ export class GlitchCanvas extends HTMLElement {
                     ctx.clearRect(0, 0, this._canvas.width, this._canvas.height);
                     ctx.drawImage(frame.canvas, 0, 0);
                 }
+                this._emitRendered();
             }).catch((err) => {
                 if (err.message !== 'superseded') {
                     console.warn('GlitchCanvas render failed:', err);
                 }
+                this._emitRendered();
             });
         }, 30);
     }

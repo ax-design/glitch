@@ -60,9 +60,13 @@
         var G = AxGlitch;
         G.register();
 
-        function makeGlitchCanvas(srcImg, filterType, glitches, id) {
+        // --- Diagnostics ---
+        var allCards = [];
+
+        function makeGlitchCanvas(srcImg, filterType, glitches, id, labelText) {
             var el = document.createElement('glitch-canvas');
             el.id = id;
+            el.setAttribute('data-label', labelText);
             var opts = filterType !== undefined ? { filterType: filterType } : undefined;
             var domain = el.addDomain(new G.PngDomain(), opts);
             glitches.forEach(function(g) { domain.addGlitch(g); });
@@ -77,8 +81,43 @@
             var label = document.createElement('label');
             label.textContent = labelText;
             div.appendChild(label);
+            allCards.push({ canvas: canvas, div: div, label: labelText });
             return div;
         }
+
+        function diagnoseCards() {
+            var failCount = 0;
+            allCards.forEach(function(item) {
+                var el = item.canvas;
+                var shadow = el.shadowRoot;
+                var inner = shadow ? shadow.querySelector('canvas') : null;
+                if (!inner || inner.width === 0 || inner.height === 0) {
+                    failCount++;
+                    item.div.style.border = '2px solid red';
+                    console.error('[RENDER FAIL] ' + item.label + ': canvas not initialized');
+                    return;
+                }
+                var ctx = inner.getContext('2d');
+                var sample = ctx.getImageData(
+                    Math.floor(inner.width / 2), Math.floor(inner.height / 2), 1, 1
+                ).data;
+                // Check if completely transparent (render failed)
+                if (sample[3] === 0) {
+                    failCount++;
+                    item.div.style.border = '2px solid red';
+                    console.error('[RENDER FAIL] ' + item.label + ': canvas is blank/transparent');
+                }
+            });
+            console.log('[DIAGNOSTIC] ' + (allCards.length - failCount) + '/' + allCards.length + ' cards rendered OK');
+        }
+
+        var renderedCount = 0;
+        document.addEventListener('glitch-render', function(e) {
+            renderedCount++;
+            if (renderedCount === allCards.length) {
+                diagnoseCards();
+            }
+        });
 
         function addSection(title, id, description) {
             var h2 = document.createElement('h2');
@@ -103,37 +142,53 @@
         }
 
         // --- Effect factory helpers ---
+        // pnglitch uses fixed operation counts: 50 for filtered data, 10 for compressed data.
+        // We use GlitchValueCollection with countRange to match.
+
+        function makeReplaceCollection(count, valueMin, valueMax) {
+            var c = new G.GlitchValueCollection(G.DistributionKind.Random);
+            c.countRange = { min: count, max: count };
+            c.valueRange = { min: valueMin, max: valueMax };
+            c.spread = { min: 0, max: 100 };
+            return c;
+        }
 
         function replaceGlitch() {
             return new G.FilterDataGlitch(
                 new G.Position(50),
-                new G.DensityValue(0.001, { min: 0, max: 254 })
+                makeReplaceCollection(50, 0, 254)
             );
         }
         function transposeGlitch() {
             return new G.TransposeGlitch(4);
         }
         function defectGlitch() {
+            var c = new G.GlitchValueCollection(G.DistributionKind.Random);
+            c.countRange = { min: 8, max: 12 };
+            c.spread = { min: 0, max: 100 };
             return new G.DefectGlitch(
                 new G.Position(50),
-                new G.DensityValue(0.0005, { min: 0, max: 254 })
+                c
             );
         }
 
-        // Compressed variants (same operations on compressed data)
+        // Compressed variants, fewer operations (pnglitch uses 10)
         function compressedReplaceGlitch() {
             return new G.CompressedReplaceGlitch(
                 new G.Position(50),
-                new G.DensityValue(0.0003, { min: 0, max: 254 })
+                makeReplaceCollection(10, 0, 254)
             );
         }
         function compressedTransposeGlitch() {
             return new G.CompressedTransposeGlitch(4);
         }
         function compressedDefectGlitch() {
+            var c = new G.GlitchValueCollection(G.DistributionKind.Random);
+            c.countRange = { min: 3, max: 5 };
+            c.spread = { min: 0, max: 100 };
             return new G.CompressedDefectGlitch(
                 new G.Position(50),
-                new G.DensityValue(0.0002, { min: 0, max: 254 })
+                c
             );
         }
 
@@ -166,8 +221,9 @@
                 methods.forEach(function(m) {
                     idx++;
                     var id = sectionId + '-' + idx;
-                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id);
-                    items.push({ canvas: c, label: ft.name + ' / ' + m.name });
+                    var label = title + ' / ' + ft.name + ' / ' + m.name;
+                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id, label);
+                    items.push({ canvas: c, label: label });
                 });
             });
             addGrid(items);
@@ -182,8 +238,9 @@
                 compressedMethods.forEach(function(m) {
                     idx++;
                     var id = sectionId + '-' + idx;
-                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id);
-                    items.push({ canvas: c, label: ft.name + ' / ' + m.name });
+                    var label = title + ' / ' + ft.name + ' / ' + m.name;
+                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id, label);
+                    items.push({ canvas: c, label: label });
                 });
             });
             addGrid(items);
@@ -204,12 +261,12 @@
             var alpha = document.getElementById('src-alpha');
 
             // --- Filtered data ---
-            buildFilteredSection('Filtered Data — No Alpha', 'filtered-no-alpha', noAlpha);
-            buildFilteredSection('Filtered Data — Alpha', 'filtered-alpha', alpha);
+            buildFilteredSection('Filtered Data, No Alpha', 'filtered-no-alpha', noAlpha);
+            buildFilteredSection('Filtered Data, Alpha', 'filtered-alpha', alpha);
 
             // --- Compressed data ---
-            buildCompressedSection('Compressed Data — No Alpha', 'compressed-no-alpha', noAlpha);
-            buildCompressedSection('Compressed Data — Alpha', 'compressed-alpha', alpha);
+            buildCompressedSection('Compressed Data, No Alpha', 'compressed-no-alpha', noAlpha);
+            buildCompressedSection('Compressed Data, Alpha', 'compressed-alpha', alpha);
 
             // === Graft Effects ===
             addSection('Graft Effects', 'graft',

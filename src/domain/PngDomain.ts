@@ -159,7 +159,7 @@ export class PngDomain implements GlitchDomain {
             }
             return rebuildPng(filteredData, pngState.metadata);
         } catch {
-            // Inflation failed — assemble PNG with corrupted compressed data directly.
+            // Inflation failed, assemble PNG with corrupted compressed data directly.
             // Browser will attempt partial decode.
             return assemblePng(compressedData, pngState.metadata);
         }

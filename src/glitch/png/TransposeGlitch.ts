@@ -45,7 +45,7 @@ export class TransposeGlitch extends PngGlitch {
             offset += len;
         }
 
-        // Fix filter type bytes — clamp to valid range 0-4
+        // Fix filter type bytes, clamp to valid range 0-4
         for (let s = 0; s < numScanlines; s++) {
             const ftPos = s * rawRowBytes;
             if (result[ftPos] > 4) {
