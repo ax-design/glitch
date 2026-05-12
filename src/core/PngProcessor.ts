@@ -401,10 +401,6 @@ export async function rebuildPng(filteredData: Uint8Array, metadata: PngMetadata
     return assemblePng(compressed, metadata);
 }
 
-export async function rebuildPngFromCompressed(compressedData: Uint8Array, metadata: PngMetadata): Promise<Uint8Array> {
-    return assemblePng(compressedData, metadata);
-}
-
 function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): Uint8Array {
     const typeBytes = new Uint8Array([73, 68, 65, 84]);
     const crcBase = crc32(typeBytes);
@@ -448,13 +444,4 @@ export function buildFilteredDataPool(filteredData: Uint8Array, scanlines: Scanl
 
 export function buildFilterTypePool(scanlines: ScanlineInfo[]): number[] {
     return scanlines.map(s => s.filterTypeOffset);
-}
-
-export function buildCompressedDataPool(compressedData: Uint8Array): import('../params/Pool.js').VirtualPool {
-    return {
-        length: compressedData.length,
-        resolve(index: number): number {
-            return index;
-        },
-    };
 }

@@ -8,10 +8,8 @@ import {
     reencodeWithFilter,
     reencodeWithCustomFilter,
     rebuildPng,
-    rebuildPngFromCompressed,
     buildFilteredDataPool,
     buildFilterTypePool,
-    buildCompressedDataPool,
 } from '../core/PngProcessor.js';
 import type { ScanlineInfo, PngMetadata } from '../core/PngProcessor.js';
 
@@ -50,7 +48,7 @@ export class PngDomain implements GlitchDomain {
         const { metadata, compressedData } = parsePngChunks(bytes);
         const filteredData = await inflateCompressed(compressedData);
         const scanlines = computeScanlines(filteredData, metadata);
-        const analysis = this._buildAnalysis(filteredData, scanlines, compressedData);
+        const analysis = this._buildAnalysis(filteredData, scanlines);
 
         return { originalBytes: bytes, analysis, filteredData, scanlines, metadata };
     }
@@ -59,26 +57,13 @@ export class PngDomain implements GlitchDomain {
         const pngState = state as PngDomainState;
 
         const filteredGlitches: BaseGlitch[] = [];
-        const compressedGlitches: BaseGlitch[] = [];
         let customFilterGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch | null = null;
 
         for (const glitch of glitches) {
             if (glitch.type === 'customFilter') {
                 customFilterGlitch = glitch as import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch;
-                filteredGlitches.push(glitch);
-                continue;
             }
-
-            if ('layer' in glitch) {
-                const layer = (glitch as any).layer as string;
-                if (layer === 'compressed') {
-                    compressedGlitches.push(glitch);
-                } else {
-                    filteredGlitches.push(glitch);
-                }
-            } else {
-                filteredGlitches.push(glitch);
-            }
+            filteredGlitches.push(glitch);
         }
 
         if (customFilterGlitch) {
@@ -87,10 +72,6 @@ export class PngDomain implements GlitchDomain {
 
         if (filteredGlitches.length > 0) {
             return this._applyFilteredGlitches(pngState, filteredGlitches);
-        }
-
-        if (compressedGlitches.length > 0) {
-            return this._applyCompressedGlitches(pngState, compressedGlitches);
         }
 
         return new Uint8Array(pngState.originalBytes);
@@ -115,11 +96,10 @@ export class PngDomain implements GlitchDomain {
         return rebuildPng(reencoded, metadata);
     }
 
-    private _buildAnalysis(filteredData: Uint8Array, scanlines: ScanlineInfo[], compressedData: Uint8Array): DomainAnalysis {
+    private _buildAnalysis(filteredData: Uint8Array, scanlines: ScanlineInfo[]): DomainAnalysis {
         return {
             filteredData: buildFilteredDataPool(filteredData, scanlines),
             filterTypes: buildFilterTypePool(scanlines),
-            compressedData: buildCompressedDataPool(compressedData),
         };
     }
 
@@ -132,18 +112,6 @@ export class PngDomain implements GlitchDomain {
         }
 
         return rebuildPng(filteredData, pngState.metadata);
-    }
-
-    private async _applyCompressedGlitches(pngState: PngDomainState, glitches: BaseGlitch[]): Promise<Uint8Array> {
-        const { compressedData } = parsePngChunks(pngState.originalBytes);
-        const compressed = new Uint8Array(compressedData);
-
-        for (const glitch of glitches) {
-            const pool = pngState.analysis[glitch.targetPool];
-            if (pool) glitch.apply(compressed, pool);
-        }
-
-        return rebuildPngFromCompressed(compressed, pngState.metadata);
     }
 
     private async _applyCustomFilterGlitch(

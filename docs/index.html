@@ -353,12 +353,15 @@ glitchCanvas.randomize();</pre>
             <glitch-canvas id="demo-png-graft" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Changes filter type bytes without re-filtering the data. The decoder uses the wrong filter to reconstruct pixels, producing algorithmic color distortion. No pixel data is modified. Values are taken modulo 5 (valid filter type range).</p>
+            <p>Changes filter type bytes without re-filtering the data. The decoder uses the wrong filter to reconstruct pixels, producing algorithmic color distortion across entire scanlines. Supports single or multi-value for targeting multiple scanlines.</p>
 <pre>var glitch = new G.GraftGlitch(
-  new G.Position(50),
-  new G.GlitchValue(G.PngFilterType.Paeth),
+  new G.Position(20),
+  new G.GlitchValueCollection(
+    [{ value: 4 }, { value: 2 }, { value: 3 }, { value: 1 }],
+    G.DistributionKind.Uniform,
+  ),
 );
-glitch.randomizeMode = 'val';
+glitch.randomizeMode = 'both';
 glitchCanvas.addGlitch(glitch, 'png');</pre>
         </div>
     </div>
@@ -492,13 +495,17 @@ glitch.randomizeMode = 'both';</pre>
             <glitch-canvas id="demo-png-filterdata" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Replaces bytes in decompressed filtered scanline data. Propagation direction depends on the filter type used during encoding. Works with single or multi-value.</p>
-<pre>var glitch = new G.FilterDataGlitch(
-  new G.Position(40),
-  new G.GlitchValueCollection(
-    [{ value: 200 }, { value: 150 }, { value: 100 }],
-    G.DistributionKind.Sequential,
-  ),
+            <p>Replaces bytes in decompressed filtered scanline data. Propagation direction depends on the filter type used during encoding. Use <code>GlitchValueCollection</code> with <code>Uniform</code> distribution to spread corruption across the entire image for visible multi-line effects.</p>
+<pre>var collection = new G.GlitchValueCollection(
+  [{ value: 200 }, { value: 150 }, { value: 100 },
+   { value: 180 }, { value: 120 }, { value: 160 }],
+  G.DistributionKind.Uniform,
+);
+collection.valueRange = { min: 50, max: 230 };
+
+var glitch = new G.FilterDataGlitch(
+  new G.Position(20),
+  collection,
 );
 glitch.randomizeMode = 'both';
 glitchCanvas.addGlitch(glitch, 'png');</pre>
@@ -511,26 +518,17 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
             <glitch-canvas id="demo-png-defect" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Removes bytes from filtered data, causing subsequent content to shift. Creates displacement artifacts rather than color distortion.</p>
-<pre>var glitch = new G.DefectGlitch(
-  new G.Position(50),
-  3,  // number of bytes to remove
+            <p>Overwrites bytes in filtered data with targeted values. Unlike FilterDataGlitch which replaces single bytes at precise positions, DefectGlitch zeroes out or replaces byte clusters, creating dense corruption patches.</p>
+<pre>var collection = new G.GlitchValueCollection(
+  [{ value: 0 }, { value: 255 }, { value: 0 },
+   { value: 255 }, { value: 0 }],
+  G.DistributionKind.Uniform,
 );
-glitch.randomizeMode = 'pos';
-glitchCanvas.addGlitch(glitch, 'png');</pre>
-        </div>
-    </div>
+collection.valueRange = { min: 0, max: 255 };
 
-    <h3>6h. IdatGlitch <span style="font-weight:normal;color:#888">(PNG)</span></h3>
-    <div class="demo-block">
-        <div class="demo">
-            <glitch-canvas id="demo-png-idat" buffer-size="2"></glitch-canvas>
-        </div>
-        <div class="code">
-            <p>Directly corrupts bytes in the Deflate compressed IDAT stream. Effect scales with position: near the end produces mild artifacts at the bottom, near the start can destroy the entire image.</p>
-<pre>var glitch = new G.IdatGlitch(
-  new G.Position(80),  // near end, milder effect
-  new G.GlitchValue(200),
+var glitch = new G.DefectGlitch(
+  new G.Position(30),
+  collection,
 );
 glitch.randomizeMode = 'both';
 glitchCanvas.addGlitch(glitch, 'png');</pre>
@@ -725,16 +723,12 @@ GhostGlitch(position, offset: Offset, val: GlitchValueCollection)</pre>
   Replaces bytes in filtered scanline data.
   Propagation direction set by filter type during encoding.
 
-DefectGlitch(position, count: number)
-  Removes bytes causing content displacement.
+DefectGlitch(position, val: GlitchValue | GlitchValueCollection)
+  Overwrites bytes in filtered data with targeted values.
 
 GraftGlitch(position, val: GlitchValue | GlitchValueCollection)
   Changes filter type bytes without re-filtering.
   Values are taken modulo 5 (valid filter type range).
-
-IdatGlitch(position, val: GlitchValue)
-  Corrupts bytes in the Deflate compressed IDAT stream.
-  Effect intensity scales with position in the stream.
 
 CustomFilterGlitch(encoder: FilterFunction, scanlineRange?: Range)
   Re-encodes with a custom filter function.
@@ -883,11 +877,16 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 
             // 5d. GraftGlitch (PNG)
             var pngGraftCanvas = document.getElementById('demo-png-graft');
-            var pngGraftGlitch = new G.GraftGlitch(
-                new G.Position(50),
-                new G.GlitchValue(G.PngFilterType.Paeth),
+            var graftCollection = new G.GlitchValueCollection(
+                [{ value: 4 }, { value: 2 }, { value: 3 }, { value: 1 }],
+                G.DistributionKind.Uniform,
             );
-            pngGraftGlitch.randomizeMode = 'val';
+            graftCollection.valueRange = { min: 0, max: 4 };
+            var pngGraftGlitch = new G.GraftGlitch(
+                new G.Position(20),
+                graftCollection,
+            );
+            pngGraftGlitch.randomizeMode = 'both';
             pngGraftCanvas.addGlitch(pngGraftGlitch, 'png');
             pngGraftCanvas.cloneFrom(sourceImage);
             pngGraftCanvas.enableDomain('png');
@@ -958,12 +957,15 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 
             // 6f. FilterDataGlitch (PNG)
             var pngFdCanvas = document.getElementById('demo-png-filterdata');
+            var fdCollection = new G.GlitchValueCollection(
+                [{ value: 200 }, { value: 150 }, { value: 100 },
+                 { value: 180 }, { value: 120 }, { value: 160 }],
+                G.DistributionKind.Uniform,
+            );
+            fdCollection.valueRange = { min: 50, max: 230 };
             var pngFdGlitch = new G.FilterDataGlitch(
-                new G.Position(40),
-                new G.GlitchValueCollection(
-                    [{ value: 200 }, { value: 150 }, { value: 100 }],
-                    G.DistributionKind.Sequential,
-                ),
+                new G.Position(20),
+                fdCollection,
             );
             pngFdGlitch.randomizeMode = 'both';
             pngFdCanvas.addGlitch(pngFdGlitch, 'png');
@@ -973,24 +975,21 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
 
             // 6g. DefectGlitch (PNG)
             var pngDefectCanvas = document.getElementById('demo-png-defect');
-            var pngDefectGlitch = new G.DefectGlitch(new G.Position(50), 3);
-            pngDefectGlitch.randomizeMode = 'pos';
+            var defectCollection = new G.GlitchValueCollection(
+                [{ value: 0 }, { value: 255 }, { value: 0 },
+                 { value: 255 }, { value: 0 }],
+                G.DistributionKind.Uniform,
+            );
+            defectCollection.valueRange = { min: 0, max: 255 };
+            var pngDefectGlitch = new G.DefectGlitch(
+                new G.Position(30),
+                defectCollection,
+            );
+            pngDefectGlitch.randomizeMode = 'both';
             pngDefectCanvas.addGlitch(pngDefectGlitch, 'png');
             pngDefectCanvas.cloneFrom(sourceImage);
             pngDefectCanvas.enableDomain('png');
             addControls(pngDefectCanvas);
-
-            // 6h. IdatGlitch (PNG)
-            var pngIdatCanvas = document.getElementById('demo-png-idat');
-            var pngIdatGlitch = new G.IdatGlitch(
-                new G.Position(80),
-                new G.GlitchValue(200),
-            );
-            pngIdatGlitch.randomizeMode = 'both';
-            pngIdatCanvas.addGlitch(pngIdatGlitch, 'png');
-            pngIdatCanvas.cloneFrom(sourceImage);
-            pngIdatCanvas.enableDomain('png');
-            addControls(pngIdatCanvas);
 
             // 7. GhostGlitch
             var ghostCanvas = document.getElementById('demo-ghost');

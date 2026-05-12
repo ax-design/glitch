@@ -1,4 +1,4 @@
-import { PngGlitch, PngGlitchLayer } from './types.js';
+import { PngGlitch } from './types.js';
 import { Position } from '../../params/Position.js';
 import { GlitchValue } from '../../params/GlitchValue.js';
 import { GlitchValueCollection } from '../../params/GlitchValueCollection.js';
@@ -7,7 +7,6 @@ import type { Pool } from '../../params/Pool.js';
 export class GraftGlitch extends PngGlitch {
     readonly type = 'graft';
     readonly targetPool = 'filterTypes';
-    readonly layer = PngGlitchLayer.Filtered;
     val: GlitchValue | GlitchValueCollection;
 
     constructor(position: Position, val: GlitchValue | GlitchValueCollection) {

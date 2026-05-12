@@ -1,4 +1,4 @@
-import { PngGlitch, PngGlitchLayer } from './types.js';
+import { PngGlitch } from './types.js';
 import { Position } from '../../params/Position.js';
 import type { FilterFunction } from '../../core/PngProcessor.js';
 import type { Range } from '../../params/Range.js';
@@ -7,7 +7,6 @@ import type { Pool } from '../../params/Pool.js';
 export class CustomFilterGlitch extends PngGlitch {
     readonly type = 'customFilter';
     readonly targetPool = 'filteredData';
-    readonly layer = PngGlitchLayer.Filtered;
     encoder: FilterFunction;
     scanlineRange?: Range;
 

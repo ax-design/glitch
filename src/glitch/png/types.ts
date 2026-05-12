@@ -8,12 +8,6 @@ export enum PngFilterType {
     Paeth = 4,
 }
 
-export enum PngGlitchLayer {
-    Filtered = 'filtered',
-    Compressed = 'compressed',
-}
-
 export abstract class PngGlitch extends BaseGlitch {
     readonly domain = 'png';
-    abstract readonly layer: PngGlitchLayer;
 }
