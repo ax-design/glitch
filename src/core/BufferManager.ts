@@ -5,6 +5,13 @@ import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
 import { DensityValue } from '../params/DensityValue.js';
 import { Position } from '../params/Position.js';
 
+interface DomainEntry {
+    id: string;
+    domain: GlitchDomain;
+    state: DomainState;
+    glitches: BaseGlitch[];
+}
+
 interface Buffer {
     canvas: HTMLCanvasElement;
     playCount: number;
@@ -13,10 +20,7 @@ interface Buffer {
 export class BufferManager {
     private _buffers: Buffer[] = [];
     private _bufferSize: number;
-    private _domains = new Map<string, GlitchDomain>();
-    private _domainStates = new Map<string, DomainState>();
-    private _domainGlitches = new Map<string, BaseGlitch[]>();
-    private _sourceCanvas: HTMLCanvasElement | null = null;
+    private _entries = new Map<string, DomainEntry>();
     private _imageWidth = 0;
     private _imageHeight = 0;
     private _running = false;
@@ -43,38 +47,78 @@ export class BufferManager {
         return this._hasActiveDomains();
     }
 
-    registerDomain(domain: GlitchDomain): void {
-        this._domains.set(domain.id, domain);
-    }
+    // --- Domain lifecycle ---
 
-    async enableDomain(domainId: string, sourceCanvas: HTMLCanvasElement, width: number, height: number, options?: Record<string, unknown>): Promise<void> {
-        const domain = this._domains.get(domainId);
-        if (!domain) return;
-
-        this._sourceCanvas = sourceCanvas;
+    async addDomain(id: string, domain: GlitchDomain, sourceCanvas: HTMLCanvasElement, width: number, height: number, options?: Record<string, unknown>): Promise<void> {
         this._imageWidth = width;
         this._imageHeight = height;
 
         const bytes = await domain.encode(sourceCanvas, options);
         const state = await domain.prepare(bytes);
-        this._domainStates.set(domainId, state);
+        this._entries.set(id, { id, domain, state, glitches: [] });
 
         if (this._buffers.length === 0) {
             this._recreateBuffers();
         }
     }
 
-    disableDomain(domainId: string): void {
-        this._domainStates.delete(domainId);
-        this._domainGlitches.delete(domainId);
+    removeDomain(id: string): void {
+        this._entries.delete(id);
     }
 
-    setDomainGlitches(domainId: string, glitches: BaseGlitch[]): void {
-        this._domainGlitches.set(domainId, glitches);
+    hasDomain(id: string): boolean {
+        return this._entries.has(id);
     }
+
+    getDomain(id: string): GlitchDomain | undefined {
+        return this._entries.get(id)?.domain;
+    }
+
+    async resetDomain(id: string, sourceCanvas: HTMLCanvasElement, options?: Record<string, unknown>): Promise<void> {
+        const entry = this._entries.get(id);
+        if (!entry) return;
+        const bytes = await entry.domain.encode(sourceCanvas, options);
+        entry.state = await entry.domain.prepare(bytes);
+    }
+
+    getDomainIds(): string[] {
+        return [...this._entries.keys()];
+    }
+
+    // --- Glitch management ---
+
+    getGlitches(id: string): BaseGlitch[] {
+        const entry = this._entries.get(id);
+        return entry ? [...entry.glitches] : [];
+    }
+
+    addGlitch(id: string, glitch: BaseGlitch): void {
+        const entry = this._entries.get(id);
+        if (entry) {
+            entry.glitches.push(glitch);
+        }
+    }
+
+    removeGlitch(id: string, glitch: BaseGlitch): void {
+        const entry = this._entries.get(id);
+        if (!entry) return;
+        const idx = entry.glitches.indexOf(glitch);
+        if (idx >= 0) {
+            entry.glitches.splice(idx, 1);
+        }
+    }
+
+    setDomainGlitches(id: string, glitches: BaseGlitch[]): void {
+        const entry = this._entries.get(id);
+        if (entry) {
+            entry.glitches = [...glitches];
+        }
+    }
+
+    // --- Buffer management ---
 
     private _hasActiveDomains(): boolean {
-        return this._domainStates.size > 0;
+        return this._entries.size > 0;
     }
 
     private _recreateBuffers(): void {
@@ -129,6 +173,8 @@ export class BufferManager {
         this._wake();
         return picked;
     }
+
+    // --- Render loop ---
 
     start(): void {
         if (this._running) return;
@@ -202,7 +248,9 @@ export class BufferManager {
         return maxCount > 0 ? target : null;
     }
 
-    private _randomizeGlitchParams(glitches: BaseGlitch[]): void {
+    // --- Glitch param randomization ---
+
+    randomizeGlitchParams(glitches: BaseGlitch[]): void {
         for (const glitch of glitches) {
             const mode = glitch.randomizeMode;
             if (mode === 'none') continue;
@@ -226,27 +274,23 @@ export class BufferManager {
         }
     }
 
-    private _pickActiveDomain(): { domain: GlitchDomain; state: DomainState; glitches: BaseGlitch[] } | null {
-        const activeIds = [...this._domainStates.keys()];
-        if (activeIds.length === 0) return null;
+    // --- Frame generation ---
 
-        const domainId = activeIds[Math.floor(Math.random() * activeIds.length)];
-        const domain = this._domains.get(domainId);
-        const state = this._domainStates.get(domainId);
-        const glitches = this._domainGlitches.get(domainId) ?? [];
+    private _pickActiveDomain(): DomainEntry | null {
+        const entries = [...this._entries.values()];
+        if (entries.length === 0) return null;
 
-        if (!domain || !state) return null;
-        return { domain, state, glitches };
+        return entries[Math.floor(Math.random() * entries.length)];
     }
 
     private async _generateGlitchFrame(): Promise<HTMLCanvasElement> {
-        const selected = this._pickActiveDomain();
-        if (!selected) throw new Error('No active domain');
+        const entry = this._pickActiveDomain();
+        if (!entry) throw new Error('No active domain');
 
-        const { domain, state, glitches } = selected;
+        const { domain, state, glitches } = entry;
 
         if (glitches.length > 0) {
-            this._randomizeGlitchParams(glitches);
+            this.randomizeGlitchParams(glitches);
         }
 
         const resultBytes = await domain.generateFrame(state, glitches);

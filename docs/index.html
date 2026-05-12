@@ -68,8 +68,9 @@
             var observer = new IntersectionObserver(function(entries) {
                 entries.forEach(function(entry) {
                     var canvas = entry.target;
-                    if (entry.isIntersecting && canvas.glitches && canvas.glitches.length > 0) {
-                        canvas.play();
+                    if (entry.isIntersecting) {
+                        var hasGlitches = canvas.domains.some(function(d) { return d.glitches.length > 0; });
+                        if (hasGlitches) canvas.play();
                     } else {
                         canvas.pause();
                     }
@@ -196,45 +197,40 @@ glitchCanvas.bufferSize = 6;</pre>
         </div>
     </div>
 
-    <h3>3c. <code>quality</code></h3>
+    <h3>3c. <code>quality</code> (JpegDomain)</h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="demo-quality" quality="0.3" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-quality" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>JPEG encoding quality (0.01 to 1.0). Lower quality produces coarser JPEG artifacts, making glitch effects more dramatic. Only applies to the JPEG domain. Default is <code>0.95</code>.</p>
-<pre>&lt;glitch-canvas quality="0.3"&gt;&lt;/glitch-canvas&gt;
-
-// Or via property:
-glitchCanvas.quality = 0.5;</pre>
+            <p>JPEG encoding quality (0.01 to 1.0) is set on <code>JpegDomain</code>. Lower quality produces coarser JPEG artifacts, making glitch effects more dramatic. Default is <code>0.95</code>.</p>
+<pre>var domain = canvas.addDomain(new G.JpegDomain({
+  quality: 0.3,
+}));</pre>
         </div>
     </div>
 
     <!-- ============================================================ -->
     <h2>4. Domain Management</h2>
-    <p>Glitch Canvas supports two glitch domains: <strong>JPEG</strong> and <strong>PNG</strong>. Each domain has its own set of glitch types. The JPEG domain is active by default after loading an image. You can enable the PNG domain alongside it, or use either one alone.</p>
+    <p>Glitch Canvas uses <strong>domains</strong> to manage glitch types. Each domain is an independent instance — you can add multiple PNG or JPEG domains with different settings. Call <code>addDomain()</code> to create a domain handle, then add glitches to it.</p>
 
-    <h3>4a. Enabling the PNG Domain</h3>
+    <h3>4a. Adding a PNG Domain</h3>
     <div class="demo-block">
         <div class="demo">
             <glitch-canvas id="demo-png-enable" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Enable the PNG domain to use PNG-specific glitch effects. Pass <code>filterType</code> to control how corruption propagates (see below).</p>
-<pre>glitchCanvas.cloneFrom(sourceImage);
-
-// Enable PNG domain with default (adaptive) filter
-glitchCanvas.enableDomain('png');
-
-// Or force a specific filter type
-glitchCanvas.enableDomain('png', {
+            <p><code>addDomain()</code> returns a <code>DomainHandle</code>. Glitch management methods live on the handle.</p>
+<pre>var domain = canvas.addDomain(new G.PngDomain(), {
   filterType: G.PngFilterType.Sub,
 });
 
-glitchCanvas.addGlitch(new G.FilterDataGlitch(
+domain.addGlitch(new G.FilterDataGlitch(
   new G.Position(30),
   new G.GlitchValue(128),
-), 'png');</pre>
+));
+
+canvas.cloneFrom(sourceImage);</pre>
         </div>
     </div>
 
@@ -244,14 +240,13 @@ glitchCanvas.addGlitch(new G.FilterDataGlitch(
             <glitch-canvas id="demo-png-filter" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
-            <p>The filter type used during PNG encoding determines how byte corruption propagates when the decoder reconstructs pixels. This is an encoding option, not a glitch parameter.</p>
+            <p>The filter type used during PNG encoding determines how byte corruption propagates when the decoder reconstructs pixels. This is an encoding option passed to <code>addDomain()</code>.</p>
 <pre>G.PngFilterType.None    // no propagation, single pixel
 G.PngFilterType.Sub    // horizontal (left to right)
 G.PngFilterType.Up     // vertical (top to bottom)
 G.PngFilterType.Average // diagonal (top left to bottom right)
 G.PngFilterType.Paeth  // wide area (right and down)</pre>
-<pre>// Force Sub filter for horizontal glitch propagation
-glitchCanvas.enableDomain('png', {
+<pre>var domain = canvas.addDomain(new G.PngDomain(), {
   filterType: G.PngFilterType.Sub,
 });</pre>
         </div>
@@ -263,28 +258,26 @@ glitchCanvas.enableDomain('png', {
             <glitch-canvas id="demo-multi-domain" buffer-size="4"></glitch-canvas>
         </div>
         <div class="code">
-            <p>When both JPEG and PNG domains are active, each frame randomly selects one domain. This produces mixed JPEG and PNG glitch effects in a single animation.</p>
-<pre>glitchCanvas.cloneFrom(sourceImage);
-
-// JPEG domain is active by default after cloneFrom()
-glitchCanvas.addGlitch(new G.ChaosGlitch(
+            <p>Multiple domains can coexist. Each frame randomly selects one domain, producing mixed effects. A JPEG domain is auto-added when an image loads with no domains.</p>
+<pre>var jpeg = canvas.addDomain(new G.JpegDomain());
+jpeg.addGlitch(new G.ChaosGlitch(
   new G.Position(50),
   new G.GlitchValueCollection(
     [{ value: 200 }, { value: 150 }],
     G.DistributionKind.Sequential,
   ),
-), 'jpeg');
+));
 
-// Enable PNG domain alongside JPEG
-glitchCanvas.enableDomain('png', {
+var png = canvas.addDomain(new G.PngDomain(), {
   filterType: G.PngFilterType.Up,
 });
-glitchCanvas.addGlitch(new G.FilterDataGlitch(
+png.addGlitch(new G.FilterDataGlitch(
   new G.Position(40),
   new G.GlitchValue(128),
-), 'png');
+));
 
-glitchCanvas.play(); // frames alternate randomly</pre>
+canvas.cloneFrom(sourceImage);
+canvas.play(); // frames alternate randomly</pre>
         </div>
     </div>
 
@@ -298,30 +291,30 @@ glitchCanvas.play(); // frames alternate randomly</pre>
         </div>
         <div class="code">
             <p>Overwrites the image width byte in the SOF0 segment. Accepts a single <code>GlitchValue</code> only.</p>
-<pre>var glitch = new G.WidthGlitch(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var glitch = new G.WidthGlitch(
   new G.Position(0),
   new G.GlitchValue(200),
 );
 glitch.randomizeMode = 'val';
-glitchCanvas.addGlitch(glitch);</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
     <h3>5b. QuantumGlitch <span style="font-weight:normal;color:#888">(JPEG)</span></h3>
     <div class="demo-block">
         <div class="demo">
-            <glitch-canvas id="demo-quantum" quality="0.3" buffer-size="2"></glitch-canvas>
+            <glitch-canvas id="demo-quantum" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Substitutes a byte in the DQT quantization table. Single value only. Lower <code>quality</code> produces larger quantization values, making the effect visible.</p>
-<pre>&lt;glitch-canvas quality="0.3"&gt;&lt;/glitch-canvas&gt;
-
+            <p>Substitutes a byte in the DQT quantization table. Single value only. Lower <code>quality</code> on <code>JpegDomain</code> produces larger quantization values, making the effect visible.</p>
+<pre>var domain = canvas.addDomain(new G.JpegDomain({ quality: 0.3 }));
 var glitch = new G.QuantumGlitch(
   new G.Position(50),
   new G.GlitchValue(80),
 );
 glitch.randomizeMode = 'both';
-glitchCanvas.addGlitch(glitch);</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -331,19 +324,21 @@ glitchCanvas.addGlitch(glitch);</pre>
             <glitch-canvas id="demo-quality-rand" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Set <code>qualityRange</code> to randomize JPEG quality along with glitch parameters. Each call to <code>randomize()</code> re-encodes the source at a new quality, producing different JPEG structure and quantization values.</p>
-<pre>glitchCanvas.qualityRange = { min: 0.1, max: 0.6 };
+            <p>Set <code>qualityRange</code> on <code>JpegDomain</code> to randomize JPEG quality. Each call to <code>randomize()</code> re-encodes at a new quality, producing different JPEG structure and quantization values.</p>
+<pre>var domain = canvas.addDomain(new G.JpegDomain({
+  qualityRange: { min: 0.1, max: 0.6 },
+}));
 
 var glitch = new G.QuantumGlitch(
   new G.Position(50),
   new G.GlitchValue(80),
 );
 glitch.randomizeMode = 'both';
-glitchCanvas.addGlitch(glitch);
+domain.addGlitch(glitch);
 
 // randomize() now also randomizes quality
-// and re-encodes the JPEG at the new quality
-glitchCanvas.randomize();</pre>
+canvas.cloneFrom(sourceImage);
+canvas.randomize();</pre>
         </div>
     </div>
 
@@ -354,7 +349,8 @@ glitchCanvas.randomize();</pre>
         </div>
         <div class="code">
             <p>Changes filter type bytes without re-filtering the data. The decoder uses the wrong filter to reconstruct pixels, producing algorithmic color distortion across entire scanlines. Supports single or multi-value for targeting multiple scanlines.</p>
-<pre>var glitch = new G.GraftGlitch(
+<pre>var domain = canvas.addDomain(new G.PngDomain());
+var glitch = new G.GraftGlitch(
   new G.Position(20),
   new G.GlitchValueCollection(
     [{ value: 4 }, { value: 2 }, { value: 3 }, { value: 1 }],
@@ -362,7 +358,7 @@ glitchCanvas.randomize();</pre>
   ),
 );
 glitch.randomizeMode = 'both';
-glitchCanvas.addGlitch(glitch, 'png');</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -373,7 +369,11 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
         </div>
         <div class="code">
             <p>Re-encodes scanlines with a custom filter function instead of the standard PNG filters. The decoder still uses standard filter reconstruction, creating systematic algorithmic deviation across the image. Optionally target a <code>scanlineRange</code> to affect only some rows.</p>
-<pre>// Custom filter: XOR each byte with its left neighbor
+<pre>var domain = canvas.addDomain(new G.PngDomain(), {
+  filterType: G.PngFilterType.Sub,
+});
+
+// Custom filter: XOR each byte with its left neighbor
 var customEncoder = function(data, prev, sampleSize) {
   var result = new Uint8Array(data);
   for (var i = sampleSize; i < data.length; i++) {
@@ -383,7 +383,7 @@ var customEncoder = function(data, prev, sampleSize) {
 };
 
 var glitch = new G.CustomFilterGlitch(customEncoder);
-glitchCanvas.addGlitch(glitch, 'png');</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -411,7 +411,7 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
             <p style="text-align:center;margin:4px 0 0">Paeth</p>
         </div>
         <div class="code">
-<pre>var density = new G.DensityValue(0.05, { min: 50, max: 230 });
+<pre>var density = new G.DensityValue(0.01, { min: 50, max: 230 });
 
 var filters = [
   [G.PngFilterType.None, 'None'],
@@ -421,12 +421,14 @@ var filters = [
   [G.PngFilterType.Paeth,   'Paeth'],
 ];
 filters.forEach(function([type, name]) {
+  var domain = canvas.addDomain(new G.PngDomain(), {
+    filterType: type,
+  });
   var glitch = new G.FilterDataGlitch(
     new G.Position(50), density,
   );
   glitch.randomizeMode = 'both';
-  glitchCanvas.addGlitch(glitch, 'png');
-  glitchCanvas.enableDomain('png', { filterType: type });
+  domain.addGlitch(glitch);
 });</pre>
         </div>
     </div>
@@ -441,12 +443,13 @@ filters.forEach(function([type, name]) {
         </div>
         <div class="code">
             <p>Substitutes bytes in the SOS scan data. Can use a single <code>GlitchValue</code>:</p>
-<pre>var glitch = new G.ChaosGlitch(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var glitch = new G.ChaosGlitch(
   new G.Position(30),
   new G.GlitchValue(200),
 );
 glitch.randomizeMode = 'val';
-glitchCanvas.addGlitch(glitch);</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -457,7 +460,8 @@ glitchCanvas.addGlitch(glitch);</pre>
         </div>
         <div class="code">
             <p>With <code>GlitchValueCollection</code> and sequential distribution, entries are written to consecutive pool indices.</p>
-<pre>var collection = new G.GlitchValueCollection(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 150 },
@@ -482,7 +486,8 @@ glitch.randomizeMode = 'val';</pre>
         </div>
         <div class="code">
             <p>Random distribution scatters entries within a <code>spread</code> range around the base position.</p>
-<pre>var collection = new G.GlitchValueCollection(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 180 },
@@ -509,7 +514,8 @@ glitch.randomizeMode = 'both';</pre>
         </div>
         <div class="code">
             <p>Uniform distribution spaces entries evenly across the full pool, giving maximum coverage.</p>
-<pre>var collection = new G.GlitchValueCollection(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var collection = new G.GlitchValueCollection(
   [
     { value: 200 },
     { value: 180 },
@@ -535,7 +541,8 @@ glitch.randomizeMode = 'both';</pre>
         </div>
         <div class="code">
             <p>Substitutes bytes in the DHT AC Huffman symbol table. Supports both single and multi-value.</p>
-<pre>var collection = new G.GlitchValueCollection(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var collection = new G.GlitchValueCollection(
   [
     { value: 128 },
     { value: 64 },
@@ -561,14 +568,17 @@ glitch.randomizeMode = 'both';</pre>
         </div>
         <div class="code">
             <p>Replaces bytes in decompressed filtered scanline data. Propagation direction depends on the filter type used during encoding. Use <code>DensityValue</code> to auto-generate sites proportional to image size.</p>
-<pre>var density = new G.DensityValue(0.05, { min: 50, max: 230 });
+<pre>var domain = canvas.addDomain(new G.PngDomain(), {
+  filterType: G.PngFilterType.Average,
+});
+var density = new G.DensityValue(0.01, { min: 50, max: 230 });
 
 var glitch = new G.FilterDataGlitch(
   new G.Position(20),
   density,
 );
 glitch.randomizeMode = 'both';
-glitchCanvas.addGlitch(glitch, 'png');</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -578,15 +588,16 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
             <glitch-canvas id="demo-png-defect" buffer-size="2"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Deletes bytes from filtered data and shifts all subsequent bytes forward (like pnglitch's Defect). This cascading shift misaligns scanline boundaries — the decoder interprets shifted data with potentially wrong filter types, producing progressive displacement artifacts. Filter type bytes are clamped to 0–4 after the shift to keep the PNG decodable.</p>
-<pre>var density = new G.DensityValue(0.03);
+            <p>Deletes bytes from filtered data and shifts all subsequent bytes forward (like pnglitch's Defect). This cascading shift misaligns scanline boundaries — the decoder interprets shifted data with potentially wrong filter types, producing progressive displacement artifacts. Filter type bytes are randomized to 0-4 after the shift to keep the PNG decodable.</p>
+<pre>var domain = canvas.addDomain(new G.PngDomain());
+var density = new G.DensityValue(0.03);
 
 var glitch = new G.DefectGlitch(
   new G.Position(30),
   density,
 );
 glitch.randomizeMode = 'both';
-glitchCanvas.addGlitch(glitch, 'png');</pre>
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -597,8 +608,11 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
         </div>
         <div class="code">
             <p>Divides filtered data into byte-level chunks and randomly rearranges them (like pnglitch's Transpose). Chunk boundaries cut through scanlines freely, creating dramatic block-shifting and intra-scanline tearing. Filter type bytes are clamped to 0–4 after rearrangement to keep the PNG decodable. Most striking with <code>Paeth</code> and <code>Sub</code> filters.</p>
-<pre>var glitch = new G.TransposeGlitch(4);
-glitchCanvas.addGlitch(glitch, 'png');</pre>
+<pre>var domain = canvas.addDomain(new G.PngDomain(), {
+  filterType: G.PngFilterType.Paeth,
+});
+var glitch = new G.TransposeGlitch(4);
+domain.addGlitch(glitch);</pre>
         </div>
     </div>
 
@@ -611,7 +625,8 @@ glitchCanvas.addGlitch(glitch, 'png');</pre>
         </div>
         <div class="code">
             <p>Copies a block of scan data from a source offset to a target position. Always uses <code>GlitchValueCollection</code>. Each entry is one copy operation. <code>Offset</code> controls how far back the source is from the target.</p>
-<pre>var collection = new G.GlitchValueCollection(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var collection = new G.GlitchValueCollection(
   [
     { value: 100 },
     { value: 200 },
@@ -645,7 +660,8 @@ glitch.randomizeMode = 'val';  // randomize values
 glitch.randomizeMode = 'pos';  // randomize position
 glitch.randomizeMode = 'both'; // randomize both</pre>
             <p>Below: WidthGlitch with <code>'val'</code> + ChaosGlitch with <code>'both'</code>.</p>
-<pre>var widthGlitch = new G.WidthGlitch(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var widthGlitch = new G.WidthGlitch(
   new G.Position(0),
   new G.GlitchValue(200),
 );
@@ -672,8 +688,9 @@ chaosGlitch.randomizeMode = 'both';</pre>
             <glitch-canvas id="demo-combined" buffer-size="3"></glitch-canvas>
         </div>
         <div class="code">
-            <p>Use <code>setGlitches()</code> to apply multiple glitch types. Use <code>addGlitch()</code> and <code>removeGlitch()</code> for individual management. Pass a <code>domainId</code> to target a specific domain.</p>
-<pre>glitchCanvas.setGlitches([
+            <p>Use <code>setGlitches()</code> on a domain handle to apply multiple glitch types at once. Use <code>addGlitch()</code> and <code>removeGlitch()</code> for individual management.</p>
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+domain.setGlitches([
   new G.WidthGlitch(
     new G.Position(0),
     new G.GlitchValue(200),
@@ -696,10 +713,10 @@ chaosGlitch.randomizeMode = 'both';</pre>
 ]);
 
 // Set randomizeMode so each frame varies:
-glitchCanvas.glitches[0].randomizeMode = 'val';
-glitchCanvas.glitches[1].randomizeMode = 'both';
-glitchCanvas.glitches[2].randomizeMode = 'both';
-glitchCanvas.glitches[3].randomizeMode = 'both';</pre>
+domain.glitches[0].randomizeMode = 'val';
+domain.glitches[1].randomizeMode = 'both';
+domain.glitches[2].randomizeMode = 'both';
+domain.glitches[3].randomizeMode = 'both';</pre>
         </div>
     </div>
 
@@ -731,16 +748,17 @@ glitchCanvas.download('output.png');  // export current frame as PNG</pre>
             <glitch-canvas id="demo-rerender" buffer-size="1"></glitch-canvas>
         </div>
         <div class="code">
-<pre>var glitch = new G.ChaosGlitch(
+<pre>var domain = canvas.addDomain(new G.JpegDomain());
+var glitch = new G.ChaosGlitch(
   new G.Position(50),
   new G.GlitchValue(200),
 );
-glitchCanvas.addGlitch(glitch);
+domain.addGlitch(glitch);
 
 // Later, change a parameter:
 glitch.position = new G.Position(75);
 glitch.val = new G.GlitchValue(100);
-glitchCanvas.requestRender();</pre>
+canvas.requestRender();</pre>
         </div>
     </div>
 
@@ -751,32 +769,36 @@ glitchCanvas.requestRender();</pre>
 <pre>src          string   Image URL to fetch on connect
 fps          number   Playback frame rate (default: 8)
 buffer-size  number   Number of internal frame buffers (default: 4)
-quality      number   JPEG encoding quality, 0.01-1.0 (default: 0.95)
 autoplay     boolean  Auto-play after image loads</pre>
 
-    <h3>Methods</h3>
+    <h3>GlitchCanvas Methods</h3>
 <pre>play()                                              Start playback
 pause()                                             Stop playback
 load(url: string): Promise&lt;void&gt;                    Fetch and load image from URL
 cloneFrom(el: Canvas|Image|Picture): void           Capture from existing element
-addGlitch(glitch, domainId?): void                  Add glitch to a domain
-removeGlitch(glitch, domainId?): void               Remove glitch from a domain
-setGlitches(glitches, domainId?): void              Set glitches for a domain
+addDomain(domain, options?): DomainHandle           Add a domain, returns handle
+removeDomain(handle: DomainHandle | string): void   Remove a domain
 randomize(): void                                   Randomize all params, re-render
 requestRender(): void                               Re-render current params
-download(filename?: string): void                   Export frame as PNG
-enableDomain(domainId, options?): Promise&lt;void&gt;     Activate a glitch domain
-disableDomain(domainId): void                       Deactivate a glitch domain</pre>
+download(filename?: string): void                   Export frame as PNG</pre>
 
-    <h3>Properties</h3>
+    <h3>GlitchCanvas Properties</h3>
 <pre>isPlaying     boolean               Read-only playback state
-glitches      ReadonlyArray         Current glitch list across all domains
+domains       DomainHandle[]         All domain handles
+autoDomain    DomainHandle|null      Auto-created JPEG domain (after image load)
 fps           number                Frame rate
 bufferSize    number                Buffer count
-quality       number                JPEG encoding quality (0.01-1.0)
-qualityRange  Range&lt;number&gt;|undef   Range for quality randomization
 src           string                Image URL
 autoplay      boolean               Auto-play on load</pre>
+
+    <h3>DomainHandle Methods</h3>
+<pre>addGlitch(glitch: BaseGlitch): void                Add a glitch to this domain
+removeGlitch(glitch: BaseGlitch): void              Remove a glitch
+setGlitches(glitches: BaseGlitch[]): void           Replace all glitches</pre>
+
+    <h3>DomainHandle Properties</h3>
+<pre>id            string                 Unique domain ID (auto-assigned)
+glitches      ReadonlyArray          Current glitch list for this domain</pre>
 
     <h3>JPEG Glitch Types</h3>
 <pre>WidthGlitch(position, val: GlitchValue)
@@ -815,20 +837,26 @@ G.PngFilterType.Average // diagonal propagation
 G.PngFilterType.Paeth   // wide area propagation</pre>
 
     <h3>Domain Management</h3>
-<pre>// Enable PNG domain with forced filter type
-glitchCanvas.enableDomain('png', { filterType: G.PngFilterType.Sub });
+<pre>// Add a JPEG domain with custom quality
+var jpeg = canvas.addDomain(new G.JpegDomain({ quality: 0.3 }));
+jpeg.addGlitch(new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200)));
+
+// Add a PNG domain with forced filter type
+var png = canvas.addDomain(new G.PngDomain(), {
+  filterType: G.PngFilterType.Sub,
+});
+png.addGlitch(new G.FilterDataGlitch(new G.Position(30), new G.GlitchValue(128)));
 
 // Set max dimension to control PNG encoding size (default: 1024)
-// Large images are scaled down to reduce per-frame compression cost
-glitchCanvas.enableDomain('png', {
+var png2 = canvas.addDomain(new G.PngDomain(), {
   filterType: G.PngFilterType.Sub,
   maxDimension: 800,
 });
 
-// Disable a domain
-glitchCanvas.disableDomain('png');
+// Remove a domain
+canvas.removeDomain(png2);
 
-// JPEG domain is enabled by default after cloneFrom() or load()</pre>
+// JPEG domain is auto-added when image loads with no domains</pre>
 
     <h3>Parameter Classes</h3>
 <pre>Position(value: number)                // 0 to 100, normalized position in pool
@@ -848,7 +876,7 @@ collection.randomize();                          // regenerate entries
 collection.resolve(pool, baseIdx);               // get concrete byte indices</pre>
 
     <h3>DensityValue</h3>
-<pre>var density = new G.DensityValue(0.05, { min: 50, max: 230 });
+<pre>var density = new G.DensityValue(0.01, { min: 50, max: 230 });
 // 0.05 = target 5% of all pixels, values randomized within [50, 230]
 // Distribution defaults to Random (can pass DistributionKind.Uniform etc.)
 // Works wherever GlitchValueCollection is accepted
@@ -861,42 +889,46 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
         function initAll() {
             // 3a. fps demo
             var fpsCanvas = document.getElementById('demo-fps');
+            var fpsDomain = fpsCanvas.addDomain(new G.JpegDomain());
             var fpsGlitch = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
             fpsGlitch.randomizeMode = 'val';
-            fpsCanvas.addGlitch(fpsGlitch);
+            fpsDomain.addGlitch(fpsGlitch);
             fpsCanvas.cloneFrom(sourceImage);
             addControls(fpsCanvas);
 
             // 3b. buffer-size demo
             var bufferCanvas = document.getElementById('demo-buf');
+            var bufferDomain = bufferCanvas.addDomain(new G.JpegDomain());
             var bufferGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(180));
             bufferGlitch.randomizeMode = 'both';
-            bufferCanvas.addGlitch(bufferGlitch);
+            bufferDomain.addGlitch(bufferGlitch);
             bufferCanvas.cloneFrom(sourceImage);
             addControls(bufferCanvas);
 
             // 3c. quality demo
             var qualityCanvas = document.getElementById('demo-quality');
+            var qualityDomain = qualityCanvas.addDomain(new G.JpegDomain({ quality: 0.3 }));
             var qualityGlitch = new G.ChaosGlitch(new G.Position(40), new G.GlitchValue(200));
             qualityGlitch.randomizeMode = 'both';
-            qualityCanvas.addGlitch(qualityGlitch);
+            qualityDomain.addGlitch(qualityGlitch);
             qualityCanvas.cloneFrom(sourceImage);
             addControls(qualityCanvas);
 
             // 4a. PNG domain enable
             var pngEnableCanvas = document.getElementById('demo-png-enable');
+            var pngEnableDomain = pngEnableCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Sub });
             var pngEnableGlitch = new G.FilterDataGlitch(
                 new G.Position(30),
                 new G.GlitchValue(128),
             );
             pngEnableGlitch.randomizeMode = 'both';
-            pngEnableCanvas.addGlitch(pngEnableGlitch, 'png');
+            pngEnableDomain.addGlitch(pngEnableGlitch);
             pngEnableCanvas.cloneFrom(sourceImage);
-            pngEnableCanvas.enableDomain('png', { filterType: G.PngFilterType.Sub });
             addControls(pngEnableCanvas);
 
             // 4b. Filter type demo
             var pngFilterCanvas = document.getElementById('demo-png-filter');
+            var pngFilterDomain = pngFilterCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Up });
             var pngFilterGlitch = new G.FilterDataGlitch(
                 new G.Position(40),
                 new G.GlitchValueCollection(
@@ -905,13 +937,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
                 ),
             );
             pngFilterGlitch.randomizeMode = 'both';
-            pngFilterCanvas.addGlitch(pngFilterGlitch, 'png');
+            pngFilterDomain.addGlitch(pngFilterGlitch);
             pngFilterCanvas.cloneFrom(sourceImage);
-            pngFilterCanvas.enableDomain('png', { filterType: G.PngFilterType.Up });
             addControls(pngFilterCanvas);
 
             // 4c. Multi-domain
             var multiCanvas = document.getElementById('demo-multi-domain');
+            var multiJpegDomain = multiCanvas.addDomain(new G.JpegDomain());
             var multiJpegGlitch = new G.ChaosGlitch(
                 new G.Position(50),
                 new G.GlitchValueCollection(
@@ -920,44 +952,47 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
                 ),
             );
             multiJpegGlitch.randomizeMode = 'both';
-            multiCanvas.addGlitch(multiJpegGlitch, 'jpeg');
+            multiJpegDomain.addGlitch(multiJpegGlitch);
+            var multiPngDomain = multiCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Up });
             var multiPngGlitch = new G.FilterDataGlitch(
                 new G.Position(40),
                 new G.GlitchValue(128),
             );
             multiPngGlitch.randomizeMode = 'both';
-            multiCanvas.addGlitch(multiPngGlitch, 'png');
+            multiPngDomain.addGlitch(multiPngGlitch);
             multiCanvas.cloneFrom(sourceImage);
-            multiCanvas.enableDomain('png', { filterType: G.PngFilterType.Up });
             addControls(multiCanvas);
 
             // 5a. WidthGlitch
             var widthCanvas = document.getElementById('demo-width');
+            var widthDomain = widthCanvas.addDomain(new G.JpegDomain());
             var widthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
             widthGlitch.randomizeMode = 'val';
-            widthCanvas.addGlitch(widthGlitch);
+            widthDomain.addGlitch(widthGlitch);
             widthCanvas.cloneFrom(sourceImage);
             addControls(widthCanvas);
 
             // 5b. QuantumGlitch
             var quantumCanvas = document.getElementById('demo-quantum');
+            var quantumDomain = quantumCanvas.addDomain(new G.JpegDomain({ quality: 0.3 }));
             var quantumGlitch = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
             quantumGlitch.randomizeMode = 'both';
-            quantumCanvas.addGlitch(quantumGlitch);
+            quantumDomain.addGlitch(quantumGlitch);
             quantumCanvas.cloneFrom(sourceImage);
             addControls(quantumCanvas);
 
             // 5c. QuantumGlitch + Quality Randomization
             var qualityRandCanvas = document.getElementById('demo-quality-rand');
-            qualityRandCanvas.qualityRange = { min: 0.1, max: 0.6 };
+            var qualityRandDomain = qualityRandCanvas.addDomain(new G.JpegDomain({ qualityRange: { min: 0.1, max: 0.6 } }));
             var qualityRandGlitch = new G.QuantumGlitch(new G.Position(50), new G.GlitchValue(80));
             qualityRandGlitch.randomizeMode = 'both';
-            qualityRandCanvas.addGlitch(qualityRandGlitch);
+            qualityRandDomain.addGlitch(qualityRandGlitch);
             qualityRandCanvas.cloneFrom(sourceImage);
             addControls(qualityRandCanvas);
 
             // 5d. GraftGlitch (PNG)
             var pngGraftCanvas = document.getElementById('demo-png-graft');
+            var pngGraftDomain = pngGraftCanvas.addDomain(new G.PngDomain());
             var graftCollection = new G.GlitchValueCollection(
                 [{ value: 4 }, { value: 2 }, { value: 3 }, { value: 1 }],
                 G.DistributionKind.Uniform,
@@ -968,13 +1003,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
                 graftCollection,
             );
             pngGraftGlitch.randomizeMode = 'both';
-            pngGraftCanvas.addGlitch(pngGraftGlitch, 'png');
+            pngGraftDomain.addGlitch(pngGraftGlitch);
             pngGraftCanvas.cloneFrom(sourceImage);
-            pngGraftCanvas.enableDomain('png');
             addControls(pngGraftCanvas);
 
             // 5e. CustomFilterGlitch (PNG)
             var customFilterCanvas = document.getElementById('demo-png-custom-filter');
+            var customFilterDomain = customFilterCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Sub });
             var customEncoder = function(data, prev, sampleSize) {
                 var result = new Uint8Array(data);
                 for (var i = sampleSize; i < data.length; i++) {
@@ -983,13 +1018,12 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
                 return result;
             };
             var customFilterGlitch = new G.CustomFilterGlitch(customEncoder);
-            customFilterCanvas.addGlitch(customFilterGlitch, 'png');
+            customFilterDomain.addGlitch(customFilterGlitch);
             customFilterCanvas.cloneFrom(sourceImage);
-            customFilterCanvas.enableDomain('png', { filterType: G.PngFilterType.Sub });
             addControls(customFilterCanvas);
 
             // 5f. Filter Type Comparison (PNG)
-            var filterDensity = new G.DensityValue(0.05, { min: 50, max: 230 });
+            var filterDensity = new G.DensityValue(0.01, { min: 50, max: 230 });
             [
                 ['demo-filter-none', G.PngFilterType.None],
                 ['demo-filter-sub', G.PngFilterType.Sub],
@@ -998,24 +1032,26 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
                 ['demo-filter-paeth', G.PngFilterType.Paeth],
             ].forEach(function(pair) {
                 var canvas = document.getElementById(pair[0]);
+                var domain = canvas.addDomain(new G.PngDomain(), { filterType: pair[1] });
                 var glitch = new G.FilterDataGlitch(new G.Position(50), filterDensity);
                 glitch.randomizeMode = 'both';
-                canvas.addGlitch(glitch, 'png');
+                domain.addGlitch(glitch);
                 canvas.cloneFrom(sourceImage);
-                canvas.enableDomain('png', { filterType: pair[1] });
                 addControls(canvas);
             });
 
             // 6a. ChaosGlitch single
             var chaosSingleCanvas = document.getElementById('demo-chaos-single');
+            var chaosSingleDomain = chaosSingleCanvas.addDomain(new G.JpegDomain());
             var chaosSingleGlitch = new G.ChaosGlitch(new G.Position(30), new G.GlitchValue(200));
             chaosSingleGlitch.randomizeMode = 'val';
-            chaosSingleCanvas.addGlitch(chaosSingleGlitch);
+            chaosSingleDomain.addGlitch(chaosSingleGlitch);
             chaosSingleCanvas.cloneFrom(sourceImage);
             addControls(chaosSingleCanvas);
 
             // 6b. ChaosGlitch sequential
             var chaosSeqCanvas = document.getElementById('demo-chaos-seq');
+            var chaosSeqDomain = chaosSeqCanvas.addDomain(new G.JpegDomain());
             var seqCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 150 }, { value: 100 }],
                 G.DistributionKind.Sequential,
@@ -1023,12 +1059,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             seqCollection.valueRange = { min: 50, max: 200 };
             var chaosSeqGlitch = new G.ChaosGlitch(new G.Position(40), seqCollection);
             chaosSeqGlitch.randomizeMode = 'val';
-            chaosSeqCanvas.addGlitch(chaosSeqGlitch);
+            chaosSeqDomain.addGlitch(chaosSeqGlitch);
             chaosSeqCanvas.cloneFrom(sourceImage);
             addControls(chaosSeqCanvas);
 
             // 6c. ChaosGlitch random
             var chaosRandCanvas = document.getElementById('demo-chaos-rand');
+            var chaosRandDomain = chaosRandCanvas.addDomain(new G.JpegDomain());
             var randCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 180 }, { value: 160 }],
                 G.DistributionKind.Random,
@@ -1038,12 +1075,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             randCollection.spread = { min: 0, max: 100 };
             var chaosRandGlitch = new G.ChaosGlitch(new G.Position(50), randCollection);
             chaosRandGlitch.randomizeMode = 'both';
-            chaosRandCanvas.addGlitch(chaosRandGlitch);
+            chaosRandDomain.addGlitch(chaosRandGlitch);
             chaosRandCanvas.cloneFrom(sourceImage);
             addControls(chaosRandCanvas);
 
             // 6d. ChaosGlitch uniform
             var chaosUniCanvas = document.getElementById('demo-chaos-uni');
+            var chaosUniDomain = chaosUniCanvas.addDomain(new G.JpegDomain());
             var uniCollection = new G.GlitchValueCollection(
                 [{ value: 200 }, { value: 180 }, { value: 160 }, { value: 140 }],
                 G.DistributionKind.Uniform,
@@ -1051,12 +1089,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             uniCollection.valueRange = { min: 50, max: 220 };
             var chaosUniGlitch = new G.ChaosGlitch(new G.Position(20), uniCollection);
             chaosUniGlitch.randomizeMode = 'both';
-            chaosUniCanvas.addGlitch(chaosUniGlitch);
+            chaosUniDomain.addGlitch(chaosUniGlitch);
             chaosUniCanvas.cloneFrom(sourceImage);
             addControls(chaosUniCanvas);
 
             // 6e. HuffmanGlitch
             var huffmanCanvas = document.getElementById('demo-huffman');
+            var huffmanDomain = huffmanCanvas.addDomain(new G.JpegDomain());
             var huffmanCollection = new G.GlitchValueCollection(
                 [{ value: 128 }, { value: 64 }, { value: 192 }],
                 G.DistributionKind.Random,
@@ -1065,46 +1104,47 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             huffmanCollection.spread = { min: 0, max: 50 };
             var huffmanGlitch = new G.HuffmanGlitch(new G.Position(30), huffmanCollection);
             huffmanGlitch.randomizeMode = 'both';
-            huffmanCanvas.addGlitch(huffmanGlitch);
+            huffmanDomain.addGlitch(huffmanGlitch);
             huffmanCanvas.cloneFrom(sourceImage);
             addControls(huffmanCanvas);
 
             // 6f. FilterDataGlitch (PNG)
             var pngFdCanvas = document.getElementById('demo-png-filterdata');
-            var fdDensity = new G.DensityValue(0.05, { min: 50, max: 230 });
+            var pngFdDomain = pngFdCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Average });
+            var fdDensity = new G.DensityValue(0.01, { min: 50, max: 230 });
             var pngFdGlitch = new G.FilterDataGlitch(
                 new G.Position(20),
                 fdDensity,
             );
             pngFdGlitch.randomizeMode = 'both';
-            pngFdCanvas.addGlitch(pngFdGlitch, 'png');
+            pngFdDomain.addGlitch(pngFdGlitch);
             pngFdCanvas.cloneFrom(sourceImage);
-            pngFdCanvas.enableDomain('png', { filterType: G.PngFilterType.Average });
             addControls(pngFdCanvas);
 
             // 6g. DefectGlitch (PNG)
             var pngDefectCanvas = document.getElementById('demo-png-defect');
+            var pngDefectDomain = pngDefectCanvas.addDomain(new G.PngDomain());
             var defectDensity = new G.DensityValue(0.03);
             var pngDefectGlitch = new G.DefectGlitch(
                 new G.Position(30),
                 defectDensity,
             );
             pngDefectGlitch.randomizeMode = 'both';
-            pngDefectCanvas.addGlitch(pngDefectGlitch, 'png');
+            pngDefectDomain.addGlitch(pngDefectGlitch);
             pngDefectCanvas.cloneFrom(sourceImage);
-            pngDefectCanvas.enableDomain('png');
             addControls(pngDefectCanvas);
 
             // 6h. TransposeGlitch (PNG)
             var pngTransposeCanvas = document.getElementById('demo-png-transpose');
+            var pngTransposeDomain = pngTransposeCanvas.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Paeth });
             var pngTransposeGlitch = new G.TransposeGlitch(4);
-            pngTransposeCanvas.addGlitch(pngTransposeGlitch, 'png');
+            pngTransposeDomain.addGlitch(pngTransposeGlitch);
             pngTransposeCanvas.cloneFrom(sourceImage);
-            pngTransposeCanvas.enableDomain('png', { filterType: G.PngFilterType.Paeth });
             addControls(pngTransposeCanvas);
 
             // 7. GhostGlitch
             var ghostCanvas = document.getElementById('demo-ghost');
+            var ghostDomain = ghostCanvas.addDomain(new G.JpegDomain());
             var ghostCollection = new G.GlitchValueCollection(
                 [{ value: 100 }, { value: 200 }, { value: 50 }],
                 G.DistributionKind.Sequential,
@@ -1113,12 +1153,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             ghostCollection.valueRange = { min: 0, max: 254 };
             var ghostGlitch = new G.GhostGlitch(new G.Position(50), new G.Offset(10), ghostCollection);
             ghostGlitch.randomizeMode = 'both';
-            ghostCanvas.addGlitch(ghostGlitch);
+            ghostDomain.addGlitch(ghostGlitch);
             ghostCanvas.cloneFrom(sourceImage);
             addControls(ghostCanvas);
 
             // 8. Randomization modes
             var modesCanvas = document.getElementById('demo-modes');
+            var modesDomain = modesCanvas.addDomain(new G.JpegDomain());
             var modeWidthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
             modeWidthGlitch.randomizeMode = 'val';
             var modeCollection = new G.GlitchValueCollection(
@@ -1129,12 +1170,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             modeCollection.countRange = { min: 2, max: 8 };
             var modeChaosGlitch = new G.ChaosGlitch(new G.Position(50), modeCollection);
             modeChaosGlitch.randomizeMode = 'both';
-            modesCanvas.setGlitches([modeWidthGlitch, modeChaosGlitch]);
+            modesDomain.setGlitches([modeWidthGlitch, modeChaosGlitch]);
             modesCanvas.cloneFrom(sourceImage);
             addControls(modesCanvas);
 
             // 9. Combined
             var combinedCanvas = document.getElementById('demo-combined');
+            var combinedDomain = combinedCanvas.addDomain(new G.JpegDomain());
             var combinedWidth = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
             combinedWidth.randomizeMode = 'val';
             var combinedChaos = new G.ChaosGlitch(
@@ -1149,12 +1191,13 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             combinedQuantum1.randomizeMode = 'both';
             var combinedQuantum2 = new G.QuantumGlitch(new G.Position(70), new G.GlitchValue(60));
             combinedQuantum2.randomizeMode = 'both';
-            combinedCanvas.setGlitches([combinedWidth, combinedChaos, combinedQuantum1, combinedQuantum2]);
+            combinedDomain.setGlitches([combinedWidth, combinedChaos, combinedQuantum1, combinedQuantum2]);
             combinedCanvas.cloneFrom(sourceImage);
             addControls(combinedCanvas);
 
             // 10. Playback controls
             var playbackCanvas = document.getElementById('demo-playback');
+            var playbackDomain = playbackCanvas.addDomain(new G.JpegDomain());
             var playbackWidthGlitch = new G.WidthGlitch(new G.Position(0), new G.GlitchValue(200));
             playbackWidthGlitch.randomizeMode = 'val';
             var playbackChaosGlitch = new G.ChaosGlitch(
@@ -1167,15 +1210,16 @@ collection.resolve(pool, baseIdx);               // get concrete byte indices</p
             playbackChaosGlitch.val.valueRange = { min: 50, max: 220 };
             playbackChaosGlitch.val.spread = { min: 0, max: 80 };
             playbackChaosGlitch.randomizeMode = 'both';
-            playbackCanvas.setGlitches([playbackWidthGlitch, playbackChaosGlitch]);
+            playbackDomain.setGlitches([playbackWidthGlitch, playbackChaosGlitch]);
             playbackCanvas.cloneFrom(sourceImage);
             addControls(playbackCanvas);
 
             // 11. Re-render demo
             var rerenderCanvas = document.getElementById('demo-rerender');
+            var rerenderDomain = rerenderCanvas.addDomain(new G.JpegDomain());
             var rerenderGlitch = new G.ChaosGlitch(new G.Position(50), new G.GlitchValue(200));
             rerenderGlitch.randomizeMode = 'both';
-            rerenderCanvas.addGlitch(rerenderGlitch);
+            rerenderDomain.addGlitch(rerenderGlitch);
             rerenderCanvas.cloneFrom(sourceImage);
             addControls(rerenderCanvas);
 

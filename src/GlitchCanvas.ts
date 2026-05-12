@@ -1,10 +1,14 @@
-import { BaseGlitch } from './glitch/BaseGlitch.js';
-import { GlitchValue } from './params/GlitchValue.js';
-import { GlitchValueCollection } from './params/GlitchValueCollection.js';
-import { Range } from './params/Range.js';
 import { BufferManager } from './core/BufferManager.js';
 import { JpegDomain } from './domain/JpegDomain.js';
-import { PngDomain } from './domain/PngDomain.js';
+import { DomainHandle } from './DomainHandle.js';
+import type { GlitchDomain } from './domain/types.js';
+
+interface PendingDomain {
+    id: string;
+    handle: DomainHandle;
+    domain: GlitchDomain;
+    options?: Record<string, unknown>;
+}
 
 export class GlitchCanvas extends HTMLElement {
     static readonly ElementName = 'glitch-canvas';
@@ -12,15 +16,21 @@ export class GlitchCanvas extends HTMLElement {
     private _root = this.attachShadow({ mode: 'open' });
     private _canvas: HTMLCanvasElement;
     private _bufferManager: BufferManager;
-    private _domainGlitches = new Map<string, BaseGlitch[]>();
+    private _handles = new Map<string, DomainHandle>();
+    private _pendingDomains: PendingDomain[] = [];
+    private _nextDomainId = 1;
+    private _autoDomain: DomainHandle | null = null;
+
+    /** The auto-created default JPEG domain (null until image loads). */
+    get autoDomain(): DomainHandle | null {
+        return this._autoDomain;
+    }
     private _playing = false;
     private _playbackTimer: number | null = null;
     private _fps = 8;
     private _src = '';
     private _autoplay = false;
-    private _quality = 0.95;
     private _sourceCanvas: HTMLCanvasElement | null = null;
-    qualityRange?: Range<number>;
     private _imageWidth = 0;
     private _imageHeight = 0;
     private _renderDebounce: number | null = null;
@@ -28,7 +38,7 @@ export class GlitchCanvas extends HTMLElement {
     private _initObserver: IntersectionObserver | null = null;
 
     static get observedAttributes(): string[] {
-        return ['src', 'fps', 'buffer-size', 'autoplay', 'quality'];
+        return ['src', 'fps', 'buffer-size', 'autoplay'];
     }
 
     constructor() {
@@ -43,8 +53,6 @@ export class GlitchCanvas extends HTMLElement {
         this._root.insertBefore(style, this._canvas);
 
         this._bufferManager = new BufferManager(4);
-        this._bufferManager.registerDomain(new JpegDomain());
-        this._bufferManager.registerDomain(new PngDomain());
     }
 
     connectedCallback(): void {
@@ -82,12 +90,6 @@ export class GlitchCanvas extends HTMLElement {
                 this._autoplay = newVal !== null;
                 if (this._autoplay && this._bufferManager.ready) {
                     this.play();
-                }
-                break;
-            case 'quality':
-                this._quality = Math.min(1, Math.max(0.01, parseFloat(newVal) || 0.95));
-                if (this.isConnected && this._src) {
-                    this.load(this._src);
                 }
                 break;
         }
@@ -132,15 +134,6 @@ export class GlitchCanvas extends HTMLElement {
         }
     }
 
-    get quality(): number {
-        return this._quality;
-    }
-
-    set quality(val: number) {
-        this._quality = Math.min(1, Math.max(0.01, val));
-        this.setAttribute('quality', String(this._quality));
-    }
-
     // --- Playback ---
 
     get isPlaying(): boolean {
@@ -167,25 +160,33 @@ export class GlitchCanvas extends HTMLElement {
 
     // --- Domain Management ---
 
-    async enableDomain(domainId: string, options?: Record<string, unknown>): Promise<void> {
-        if (!this._sourceCanvas) return;
-        await this._bufferManager.enableDomain(
-            domainId,
-            this._sourceCanvas,
-            this._imageWidth,
-            this._imageHeight,
-            options,
-        );
-        const glitches = this._domainGlitches.get(domainId) ?? [];
-        this._bufferManager.setDomainGlitches(domainId, glitches);
+    addDomain(domain: GlitchDomain, options?: Record<string, unknown>): DomainHandle {
+        const id = String(this._nextDomainId++);
+        const handle = new DomainHandle(id, this._bufferManager, () => this.requestRender());
+        this._handles.set(id, handle);
+
+        if (this._sourceCanvas) {
+            // Image already loaded — initialize immediately
+            this._initDomain(id, handle, domain, options);
+        } else {
+            // No image yet — queue for initialization
+            this._pendingDomains.push({ id, handle, domain, options });
+        }
+
+        return handle;
     }
 
-    disableDomain(domainId: string): void {
-        this._bufferManager.disableDomain(domainId);
+    removeDomain(handle: DomainHandle | string): void {
+        const id = typeof handle === 'string' ? handle : handle.id;
+        this._handles.delete(id);
+        this._bufferManager.removeDomain(id);
+
+        // Also remove from pending if not yet initialized
+        this._pendingDomains = this._pendingDomains.filter((p) => p.id !== id);
     }
 
-    get activeDomains(): string[] {
-        return [...this._domainGlitches.keys()];
+    get domains(): DomainHandle[] {
+        return [...this._handles.values()];
     }
 
     // --- Image Loading ---
@@ -308,19 +309,16 @@ export class GlitchCanvas extends HTMLElement {
 
         this._initialized = true;
 
-        // Only enable the default jpeg domain if no domain has been explicitly enabled yet
-        if (!this._bufferManager.ready) {
-            await this._bufferManager.enableDomain(
-                'jpeg',
-                this._sourceCanvas,
-                this._imageWidth,
-                this._imageHeight,
-                { quality: this._quality },
-            );
-        }
+        // Flush any domains that were added before image load
+        await this._flushPendingDomains();
 
-        for (const [domainId, glitches] of this._domainGlitches) {
-            this._bufferManager.setDomainGlitches(domainId, glitches);
+        // Auto-add JPEG if no domains exist yet
+        if (!this._bufferManager.ready) {
+            const id = String(this._nextDomainId++);
+            const handle = new DomainHandle(id, this._bufferManager, () => this.requestRender());
+            this._handles.set(id, handle);
+            await this._bufferManager.addDomain(id, new JpegDomain(), this._sourceCanvas, this._imageWidth, this._imageHeight);
+            this._autoDomain = handle;
         }
 
         this._bufferManager.invalidateAll().then(() => {
@@ -341,87 +339,37 @@ export class GlitchCanvas extends HTMLElement {
         });
     }
 
-    // --- Glitch Management ---
+    private async _flushPendingDomains(): Promise<void> {
+        const pending = this._pendingDomains;
+        this._pendingDomains = [];
 
-    addGlitch(glitch: BaseGlitch, domainId?: string): void {
-        const targetDomain = domainId ?? this._resolveDefaultDomain(glitch.domain);
-        const list = this._domainGlitches.get(targetDomain) ?? [];
-        list.push(glitch);
-        this._domainGlitches.set(targetDomain, list);
-        this._bufferManager.setDomainGlitches(targetDomain, list);
-    }
-
-    removeGlitch(glitch: BaseGlitch, domainId?: string): void {
-        const targetDomain = domainId ?? this._resolveDefaultDomain(glitch.domain);
-        const list = this._domainGlitches.get(targetDomain);
-        if (!list) return;
-        const idx = list.indexOf(glitch);
-        if (idx >= 0) {
-            list.splice(idx, 1);
-            this._bufferManager.setDomainGlitches(targetDomain, list);
+        for (const { id, handle, domain, options } of pending) {
+            await this._initDomain(id, handle, domain, options);
         }
     }
 
-    setGlitches(glitches: BaseGlitch[], domainId?: string): void {
-        if (domainId) {
-            this._domainGlitches.set(domainId, [...glitches]);
-            this._bufferManager.setDomainGlitches(domainId, [...glitches]);
-        } else {
-            const byDomain = new Map<string, BaseGlitch[]>();
-            for (const g of glitches) {
-                const list = byDomain.get(g.domain) ?? [];
-                list.push(g);
-                byDomain.set(g.domain, list);
-            }
-            for (const [id, list] of byDomain) {
-                this._domainGlitches.set(id, [...list]);
-                this._bufferManager.setDomainGlitches(id, [...list]);
-            }
-        }
-    }
-
-    get glitches(): ReadonlyArray<BaseGlitch> {
-        const all: BaseGlitch[] = [];
-        for (const list of this._domainGlitches.values()) {
-            all.push(...list);
-        }
-        return all;
-    }
-
-    private _resolveDefaultDomain(glitchDomain: string): string {
-        const list = this._domainGlitches.get(glitchDomain);
-        if (list) return glitchDomain;
-        return 'jpeg';
+    private async _initDomain(id: string, handle: DomainHandle, domain: GlitchDomain, options?: Record<string, unknown>): Promise<void> {
+        await this._bufferManager.addDomain(id, domain, this._sourceCanvas!, this._imageWidth, this._imageHeight, options);
+        handle._flush();
     }
 
     // --- Randomization ---
 
     randomize(): void {
-        if (this.qualityRange && this._sourceCanvas) {
-            const lo = this.qualityRange.min;
-            const hi = this.qualityRange.max;
-            this._quality = lo + Math.random() * (hi - lo);
-            this._bufferManager.enableDomain(
-                'jpeg',
-                this._sourceCanvas,
-                this._imageWidth,
-                this._imageHeight,
-                { quality: this._quality },
-            );
-        }
+        for (const handle of this._handles.values()) {
+            const glitches = this._bufferManager.getGlitches(handle.id);
+            if (glitches.length > 0) {
+                this._bufferManager.randomizeGlitchParams(glitches);
+            }
 
-        for (const list of this._domainGlitches.values()) {
-            for (const glitch of list) {
-                if ('val' in glitch) {
-                    const val = (glitch as any).val;
-                    if (val instanceof GlitchValueCollection) {
-                        val.randomize();
-                    } else if (val instanceof GlitchValue) {
-                        val.randomize();
-                    }
-                }
+            // Quality randomization for JpegDomain
+            const domain = this._bufferManager.getDomain(handle.id);
+            if (domain instanceof JpegDomain && domain.qualityRange && this._sourceCanvas) {
+                domain.quality = domain.qualityRange.min + Math.random() * (domain.qualityRange.max - domain.qualityRange.min);
+                this._bufferManager.resetDomain(handle.id, this._sourceCanvas);
             }
         }
+
         this.requestRender();
     }
 
