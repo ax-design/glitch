@@ -379,7 +379,7 @@ export async function rebuildPng(filteredData: Uint8Array, metadata: PngMetadata
     return assemblePng(compressed, metadata);
 }
 
-function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): Uint8Array {
+export function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): Uint8Array {
     const typeBytes = new Uint8Array([73, 68, 65, 84]);
     const crcBase = crc32(typeBytes);
     const dataCrc = crc32(compressedData, crcBase);

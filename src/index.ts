@@ -3,6 +3,9 @@ export { register } from './register.js';
 export { DomainHandle } from './DomainHandle.js';
 
 export { BaseGlitch, ChaosGlitch, QuantumGlitch, WidthGlitch, HuffmanGlitch, GhostGlitch, FilterDataGlitch, DefectGlitch, TransposeGlitch, GraftGlitch, CustomFilterGlitch } from './glitch/types.js';
+export { CompressedReplaceGlitch } from './glitch/png/CompressedReplaceGlitch.js';
+export { CompressedTransposeGlitch } from './glitch/png/CompressedTransposeGlitch.js';
+export { CompressedDefectGlitch } from './glitch/png/CompressedDefectGlitch.js';
 export type { JpegGlitchType, PngGlitchType, GlitchType } from './glitch/types.js';
 
 export { PngFilterType } from './glitch/png/types.js';

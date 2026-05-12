@@ -1,0 +1,321 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>PNG Glitch Effects Catalogue</title>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: sans-serif; max-width: 1400px; margin: 0 auto; padding: 20px; }
+        h1 { margin-bottom: 0.2em; }
+        h2 { margin-top: 2em; border-bottom: 2px solid #333; padding-bottom: 0.3em; }
+        h3 { margin-top: 1.5em; color: #555; }
+        .section-desc { color: #666; margin-bottom: 1em; }
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .card {
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            padding: 8px;
+            background: #fafafa;
+        }
+        .card canvas, .card glitch-canvas {
+            width: 100%;
+            image-rendering: pixelated;
+            display: block;
+        }
+        .card label {
+            display: block;
+            font-size: 11px;
+            color: #666;
+            margin-top: 4px;
+            text-align: center;
+        }
+        .hidden-src { display: none; }
+        .nav { position: sticky; top: 0; background: white; padding: 8px 0; border-bottom: 1px solid #ddd; z-index: 10; }
+        .nav a { margin-right: 12px; text-decoration: none; color: #0066cc; }
+        .nav a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+    <h1>PNG Glitch Effects Catalogue</h1>
+    <p>Reproducing all effects from <a href="https://ucnv.github.io/pnglitch/" target="_blank">pnglitch</a> using the Glitch Canvas library.</p>
+
+    <img id="src-no-alpha" src="example.jpg" crossorigin="anonymous" class="hidden-src">
+    <img id="src-alpha" src="example.png" crossorigin="anonymous" class="hidden-src">
+
+    <div class="nav">
+        <a href="#filtered-no-alpha">Filtered / No Alpha</a>
+        <a href="#filtered-alpha">Filtered / Alpha</a>
+        <a href="#compressed-no-alpha">Compressed / No Alpha</a>
+        <a href="#compressed-alpha">Compressed / Alpha</a>
+        <a href="#graft">Graft</a>
+        <a href="#custom-filter">Custom Filters</a>
+    </div>
+
+    <script src="../build/main.js"></script>
+    <script>
+        var G = AxGlitch;
+        G.register();
+
+        function makeGlitchCanvas(srcImg, filterType, glitches, id) {
+            var el = document.createElement('glitch-canvas');
+            el.id = id;
+            var opts = filterType !== undefined ? { filterType: filterType } : undefined;
+            var domain = el.addDomain(new G.PngDomain(), opts);
+            glitches.forEach(function(g) { domain.addGlitch(g); });
+            el.cloneFrom(srcImg);
+            return el;
+        }
+
+        function card(canvas, labelText) {
+            var div = document.createElement('div');
+            div.className = 'card';
+            div.appendChild(canvas);
+            var label = document.createElement('label');
+            label.textContent = labelText;
+            div.appendChild(label);
+            return div;
+        }
+
+        function addSection(title, id, description) {
+            var h2 = document.createElement('h2');
+            h2.id = id;
+            h2.textContent = title;
+            document.body.appendChild(h2);
+            if (description) {
+                var p = document.createElement('p');
+                p.className = 'section-desc';
+                p.textContent = description;
+                document.body.appendChild(p);
+            }
+        }
+
+        function addGrid(items) {
+            var grid = document.createElement('div');
+            grid.className = 'grid';
+            items.forEach(function(item) {
+                grid.appendChild(card(item.canvas, item.label));
+            });
+            document.body.appendChild(grid);
+        }
+
+        // --- Effect factory helpers ---
+
+        function replaceGlitch() {
+            return new G.FilterDataGlitch(
+                new G.Position(50),
+                new G.DensityValue(0.001, { min: 0, max: 254 })
+            );
+        }
+        function transposeGlitch() {
+            return new G.TransposeGlitch(4);
+        }
+        function defectGlitch() {
+            return new G.DefectGlitch(
+                new G.Position(50),
+                new G.DensityValue(0.0005, { min: 0, max: 254 })
+            );
+        }
+
+        // Compressed variants (same operations on compressed data)
+        function compressedReplaceGlitch() {
+            return new G.CompressedReplaceGlitch(
+                new G.Position(50),
+                new G.DensityValue(0.0003, { min: 0, max: 254 })
+            );
+        }
+        function compressedTransposeGlitch() {
+            return new G.CompressedTransposeGlitch(4);
+        }
+        function compressedDefectGlitch() {
+            return new G.CompressedDefectGlitch(
+                new G.Position(50),
+                new G.DensityValue(0.0002, { min: 0, max: 254 })
+            );
+        }
+
+        var methods = [
+            { name: 'Replace', make: replaceGlitch },
+            { name: 'Transpose', make: transposeGlitch },
+            { name: 'Defect', make: defectGlitch },
+        ];
+        var compressedMethods = [
+            { name: 'Replace', make: compressedReplaceGlitch },
+            { name: 'Transpose', make: compressedTransposeGlitch },
+            { name: 'Defect', make: compressedDefectGlitch },
+        ];
+        var filterTypes = [
+            { name: 'Optimized', value: undefined },
+            { name: 'Sub', value: G.PngFilterType.Sub },
+            { name: 'Up', value: G.PngFilterType.Up },
+            { name: 'Average', value: G.PngFilterType.Average },
+            { name: 'Paeth', value: G.PngFilterType.Paeth },
+        ];
+
+        // === Build catalogue ===
+
+        function buildFilteredSection(title, sectionId, srcImg) {
+            addSection(title, sectionId,
+                '3 methods (Replace, Transpose, Defect) applied to filtered (decompressed) PNG data.');
+            var items = [];
+            var idx = 0;
+            filterTypes.forEach(function(ft) {
+                methods.forEach(function(m) {
+                    idx++;
+                    var id = sectionId + '-' + idx;
+                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id);
+                    items.push({ canvas: c, label: ft.name + ' / ' + m.name });
+                });
+            });
+            addGrid(items);
+        }
+
+        function buildCompressedSection(title, sectionId, srcImg) {
+            addSection(title, sectionId,
+                '3 methods applied to compressed (Deflate) data. Produces "snowstorm" effects distinct from filtered data glitches.');
+            var items = [];
+            var idx = 0;
+            filterTypes.forEach(function(ft) {
+                compressedMethods.forEach(function(m) {
+                    idx++;
+                    var id = sectionId + '-' + idx;
+                    var c = makeGlitchCanvas(srcImg, ft.value, [m.make()], id);
+                    items.push({ canvas: c, label: ft.name + ' / ' + m.name });
+                });
+            });
+            addGrid(items);
+        }
+
+        // Wait for images to load
+        Promise.all([
+            new Promise(function(r) {
+                var img = document.getElementById('src-no-alpha');
+                if (img.complete) r(); else img.onload = r;
+            }),
+            new Promise(function(r) {
+                var img = document.getElementById('src-alpha');
+                if (img.complete) r(); else img.onload = r;
+            }),
+        ]).then(function() {
+            var noAlpha = document.getElementById('src-no-alpha');
+            var alpha = document.getElementById('src-alpha');
+
+            // --- Filtered data ---
+            buildFilteredSection('Filtered Data — No Alpha', 'filtered-no-alpha', noAlpha);
+            buildFilteredSection('Filtered Data — Alpha', 'filtered-alpha', alpha);
+
+            // --- Compressed data ---
+            buildCompressedSection('Compressed Data — No Alpha', 'compressed-no-alpha', noAlpha);
+            buildCompressedSection('Compressed Data — Alpha', 'compressed-alpha', alpha);
+
+            // === Graft Effects ===
+            addSection('Graft Effects', 'graft',
+                'Incorrect filter type bytes applied without re-filtering data. The decoder interprets data through the wrong algorithm.');
+            var graftItems = [];
+            [0, 1, 2, 3, 4].forEach(function(filterVal) {
+                var filterNames = ['None', 'Sub', 'Up', 'Average', 'Paeth'];
+                var el = document.createElement('glitch-canvas');
+                el.id = 'graft-' + filterVal;
+                var domain = el.addDomain(new G.PngDomain());
+                domain.addGlitch(new G.GraftGlitch(
+                    new G.Position(0),
+                    new G.DensityValue(1.0, { min: filterVal, max: filterVal })
+                ));
+                el.cloneFrom(noAlpha);
+                graftItems.push({ canvas: el, label: 'Graft → ' + filterNames[filterVal] });
+            });
+            addGrid(graftItems);
+
+            // === Custom Incorrect Filters ===
+            addSection('Custom Incorrect Filters', 'custom-filter',
+                'Deliberately wrong filter encoders that produce algorithmic deviation when decoded by standard viewers.');
+
+            var customItems = [];
+
+            // Incorrect filter 1: Reversed reference direction
+            (function() {
+                var el = document.createElement('glitch-canvas');
+                el.id = 'custom-filter-1';
+                var domain = el.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Paeth });
+                domain.addGlitch(new G.CustomFilterGlitch(function(data, prev, sampleSize) {
+                    var result = new Uint8Array(data);
+                    for (var i = data.length - 1; i >= 0; i--) {
+                        var x = data[i];
+                        var v = prev ? prev[i - 1] || 0 : 0;
+                        result[i] = (x - v) & 0xff;
+                    }
+                    return result;
+                }));
+                el.cloneFrom(noAlpha);
+                customItems.push({ canvas: el, label: 'Reversed reference' });
+            })();
+
+            // Incorrect filter 2: Offset reference with wrong gap
+            (function() {
+                var el = document.createElement('glitch-canvas');
+                el.id = 'custom-filter-2';
+                var domain = el.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Paeth });
+                domain.addGlitch(new G.CustomFilterGlitch(function(data, prev, sampleSize) {
+                    var result = new Uint8Array(data);
+                    for (var i = data.length - 1; i >= 0; i--) {
+                        var x = data[i];
+                        var v = prev ? (prev[i - 6] || 0) : 0;
+                        result[i] = (x - v) & 0xff;
+                    }
+                    return result;
+                }));
+                el.cloneFrom(noAlpha);
+                customItems.push({ canvas: el, label: 'Offset reference (gap=6)' });
+            })();
+
+            // Incorrect filter 3: Paeth with LSB masking (& 0xfe)
+            (function() {
+                var el = document.createElement('glitch-canvas');
+                el.id = 'custom-filter-3';
+                var domain = el.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Paeth });
+                domain.addGlitch(new G.CustomFilterGlitch(function(data, prev, sampleSize) {
+                    var result = new Uint8Array(data);
+                    for (var i = data.length - 1; i >= 0; i--) {
+                        var x = data[i];
+                        var a = i >= sampleSize ? data[i - sampleSize] : 0;
+                        var b = prev ? prev[i] : 0;
+                        var c = (i >= sampleSize && prev) ? prev[i - sampleSize] : 0;
+                        var p = a + b - c;
+                        var pa = Math.abs(p - a);
+                        var pb = Math.abs(p - b);
+                        var pc = Math.abs(p - c);
+                        var pr = pa <= pb && pa <= pc ? a : pb <= pc ? b : c;
+                        result[i] = (x - pr) & 0xfe;
+                    }
+                    return result;
+                }));
+                el.cloneFrom(noAlpha);
+                customItems.push({ canvas: el, label: 'LSB-masked Paeth' });
+            })();
+
+            // Incorrect filter 4: Up with LSB masking (& 0xfe)
+            (function() {
+                var el = document.createElement('glitch-canvas');
+                el.id = 'custom-filter-4';
+                var domain = el.addDomain(new G.PngDomain(), { filterType: G.PngFilterType.Up });
+                domain.addGlitch(new G.CustomFilterGlitch(function(data, prev, sampleSize) {
+                    var result = new Uint8Array(data);
+                    for (var i = data.length - 1; i >= 0; i--) {
+                        var x = data[i];
+                        var v = prev ? prev[i] : 0;
+                        result[i] = (x - v) & 0xfe;
+                    }
+                    return result;
+                }));
+                el.cloneFrom(noAlpha);
+                customItems.push({ canvas: el, label: 'LSB-masked Up' });
+            })();
+
+            addGrid(customItems);
+        });
+    </script>
+</body>
+</html>
