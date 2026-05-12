@@ -24,6 +24,8 @@ export class GlitchCanvas extends HTMLElement {
     private _imageWidth = 0;
     private _imageHeight = 0;
     private _renderDebounce: number | null = null;
+    private _initialized = false;
+    private _initObserver: IntersectionObserver | null = null;
 
     static get observedAttributes(): string[] {
         return ['src', 'fps', 'buffer-size', 'autoplay', 'quality'];
@@ -53,6 +55,10 @@ export class GlitchCanvas extends HTMLElement {
 
     disconnectedCallback(): void {
         this.pause();
+        if (this._initObserver) {
+            this._initObserver.disconnect();
+            this._initObserver = null;
+        }
     }
 
     attributeChangedCallback(name: string, oldVal: string, newVal: string): void {
@@ -179,8 +185,6 @@ export class GlitchCanvas extends HTMLElement {
     }
 
     get activeDomains(): string[] {
-        // BufferManager doesn't expose this directly, so we track from domainGlitches
-        // that have been enabled. For now, return known domain ids that have glitches.
         return [...this._domainGlitches.keys()];
     }
 
@@ -220,7 +224,7 @@ export class GlitchCanvas extends HTMLElement {
             this._sourceCanvas.width = element.width;
             this._sourceCanvas.height = element.height;
             this._sourceCanvas.getContext('2d')!.drawImage(element, 0, 0);
-            this._initDefaultDomain();
+            this._scheduleLazyInit();
         } else if (element instanceof HTMLImageElement) {
             this._drawImageToSource(element);
         } else if (element instanceof HTMLPictureElement) {
@@ -238,7 +242,7 @@ export class GlitchCanvas extends HTMLElement {
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
         this._sourceCanvas = tempCanvas;
-        this._initDefaultDomain();
+        this._scheduleLazyInit();
     }
 
     private async _loadFromBlob(blob: Blob): Promise<void> {
@@ -258,16 +262,51 @@ export class GlitchCanvas extends HTMLElement {
         const ctx = tempCanvas.getContext('2d')!;
         ctx.drawImage(img, 0, 0);
         this._sourceCanvas = tempCanvas;
-        this._initDefaultDomain();
+        this._scheduleLazyInit();
     }
 
-    private async _initDefaultDomain(): Promise<void> {
+    private _scheduleLazyInit(): void {
         if (!this._sourceCanvas) return;
 
         this._imageWidth = this._sourceCanvas.width;
         this._imageHeight = this._sourceCanvas.height;
         this._canvas.width = this._imageWidth;
         this._canvas.height = this._imageHeight;
+
+        // Draw the source image as a placeholder
+        const ctx = this._canvas.getContext('2d')!;
+        ctx.drawImage(this._sourceCanvas, 0, 0);
+
+        // If already initialized (e.g. re-clone), just re-init directly
+        if (this._initialized) {
+            this._initDefaultDomain();
+            return;
+        }
+
+        // Set up IntersectionObserver to defer expensive init until visible
+        if (this._initObserver) {
+            this._initObserver.disconnect();
+        }
+
+        this._initObserver = new IntersectionObserver((entries) => {
+            for (const entry of entries) {
+                if (entry.isIntersecting) {
+                    if (this._initObserver) {
+                        this._initObserver.disconnect();
+                        this._initObserver = null;
+                    }
+                    this._initDefaultDomain();
+                }
+            }
+        }, { rootMargin: '100px' });
+
+        this._initObserver.observe(this);
+    }
+
+    private async _initDefaultDomain(): Promise<void> {
+        if (!this._sourceCanvas) return;
+
+        this._initialized = true;
 
         await this._bufferManager.enableDomain(
             'jpeg',
@@ -325,7 +364,6 @@ export class GlitchCanvas extends HTMLElement {
             this._domainGlitches.set(domainId, [...glitches]);
             this._bufferManager.setDomainGlitches(domainId, [...glitches]);
         } else {
-            // Distribute glitches by their domain field
             const byDomain = new Map<string, BaseGlitch[]>();
             for (const g of glitches) {
                 const list = byDomain.get(g.domain) ?? [];
@@ -348,7 +386,6 @@ export class GlitchCanvas extends HTMLElement {
     }
 
     private _resolveDefaultDomain(glitchDomain: string): string {
-        // If the domain is already active, use it. Otherwise fall back to jpeg.
         const list = this._domainGlitches.get(glitchDomain);
         if (list) return glitchDomain;
         return 'jpeg';
@@ -361,7 +398,6 @@ export class GlitchCanvas extends HTMLElement {
             const lo = this.qualityRange.min;
             const hi = this.qualityRange.max;
             this._quality = lo + Math.random() * (hi - lo);
-            // Re-encode JPEG domain with new quality
             this._bufferManager.enableDomain(
                 'jpeg',
                 this._sourceCanvas,
