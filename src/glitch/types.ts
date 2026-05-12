@@ -7,6 +7,7 @@ export { BaseGlitch } from './BaseGlitch.js';
 
 export { FilterDataGlitch } from './png/FilterDataGlitch.js';
 export { DefectGlitch } from './png/DefectGlitch.js';
+export { TransposeGlitch } from './png/TransposeGlitch.js';
 export { GraftGlitch } from './png/GraftGlitch.js';
 export { CustomFilterGlitch } from './png/CustomFilterGlitch.js';
 
@@ -17,9 +18,10 @@ import { HuffmanGlitch } from './jpeg/HuffmanGlitch.js';
 import { GhostGlitch } from './jpeg/GhostGlitch.js';
 import { FilterDataGlitch } from './png/FilterDataGlitch.js';
 import { DefectGlitch } from './png/DefectGlitch.js';
+import { TransposeGlitch } from './png/TransposeGlitch.js';
 import { GraftGlitch } from './png/GraftGlitch.js';
 import { CustomFilterGlitch } from './png/CustomFilterGlitch.js';
 
 export type JpegGlitchType = ChaosGlitch | QuantumGlitch | WidthGlitch | HuffmanGlitch | GhostGlitch;
-export type PngGlitchType = FilterDataGlitch | DefectGlitch | GraftGlitch | CustomFilterGlitch;
+export type PngGlitchType = FilterDataGlitch | DefectGlitch | TransposeGlitch | GraftGlitch | CustomFilterGlitch;
 export type GlitchType = JpegGlitchType | PngGlitchType;

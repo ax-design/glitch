@@ -2,14 +2,17 @@ import { PngGlitch } from './types.js';
 import { Position } from '../../params/Position.js';
 import { GlitchValue } from '../../params/GlitchValue.js';
 import { GlitchValueCollection } from '../../params/GlitchValueCollection.js';
+import { DensityValue } from '../../params/DensityValue.js';
 import type { Pool } from '../../params/Pool.js';
+
+type ReplaceTarget = GlitchValue | GlitchValueCollection | DensityValue;
 
 export class FilterDataGlitch extends PngGlitch {
     readonly type = 'filterData';
     readonly targetPool = 'filteredData';
-    val: GlitchValue | GlitchValueCollection;
+    val: ReplaceTarget;
 
-    constructor(position: Position, val: GlitchValue | GlitchValueCollection) {
+    constructor(position: Position, val: ReplaceTarget) {
         super(position);
         this.val = val;
     }
