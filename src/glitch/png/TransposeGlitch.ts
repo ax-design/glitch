@@ -12,12 +12,11 @@ export class TransposeGlitch extends PngGlitch {
         this.chunkCount = chunkCount ?? 4;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
-        const numScanlines = bytes.length - pool.length;
-        if (numScanlines <= 1) return;
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
+        const scanlineOffsets = (pool as any).scanlineOffsets as number[] | undefined;
+        if (!scanlineOffsets || scanlineOffsets.length <= 1) return;
 
-        const bytesPerRow = pool.length / numScanlines;
-        const rawRowBytes = bytesPerRow + 1;
+        const numScanlines = scanlineOffsets.length;
 
         const n = Math.min(this.chunkCount, bytes.length);
         if (n <= 1) return;
@@ -45,9 +44,8 @@ export class TransposeGlitch extends PngGlitch {
             offset += len;
         }
 
-        // Fix filter type bytes, clamp to valid range 0-4
-        for (let s = 0; s < numScanlines; s++) {
-            const ftPos = s * rawRowBytes;
+        // Fix filter type bytes at the known offsets, clamp to valid range 0-4
+        for (const ftPos of scanlineOffsets) {
             if (result[ftPos] > 4) {
                 result[ftPos] = result[ftPos] % 5;
             }

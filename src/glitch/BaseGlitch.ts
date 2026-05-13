@@ -8,11 +8,11 @@ export abstract class BaseGlitch {
     abstract readonly domain: string;
     abstract readonly targetPool: string;
     position: Position;
-    randomizeMode: GlitchRandomizeMode = 'none';
+    randomizeMode: GlitchRandomizeMode = 'both';
 
     constructor(position: Position) {
         this.position = position;
     }
 
-    abstract apply(bytes: Uint8Array, pool: Pool): void;
+    abstract apply(bytes: Uint8Array, pool: Pool): Uint8Array | void;
 }

@@ -8,6 +8,7 @@
 export interface VirtualPool {
     readonly length: number;
     resolve(index: number): number;
+    readonly scanlineOffsets?: number[];
 }
 
 export type Pool = number[] | VirtualPool;

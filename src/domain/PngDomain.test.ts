@@ -1,6 +1,7 @@
 import { test, expect, beforeAll } from 'bun:test';
 import CanvasKitInit from 'canvaskit-wasm';
-import { parsePngChunks, inflateCompressed, computeScanlines, rebuildPng, assemblePng } from '../core/PngProcessor.js';
+import { parsePngChunks, assemblePng } from '../core/PngProcessor.js';
+import { parseZlibDeflate } from '../core/DeflateRepair.js';
 import { PngDomain } from './PngDomain.js';
 import type { PngDomainState } from './PngDomain.js';
 import { FilterDataGlitch } from '../glitch/png/FilterDataGlitch.js';
@@ -13,7 +14,6 @@ import { CompressedDefectGlitch } from '../glitch/png/CompressedDefectGlitch.js'
 import { CustomFilterGlitch } from '../glitch/png/CustomFilterGlitch.js';
 import { PngFilterType } from '../glitch/png/types.js';
 import { Position } from '../params/Position.js';
-import { GlitchValue } from '../params/GlitchValue.js';
 import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
 import { DensityValue } from '../params/DensityValue.js';
 import { DistributionKind } from '../params/Distribution.js';
@@ -76,23 +76,35 @@ function isPngSignature(bytes: Uint8Array): boolean {
     return bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71;
 }
 
+function assertValidCompressedPng(result: Uint8Array, width: number, height: number, expectedFilteredLength: number): void {
+    expect(isPngSignature(result)).toBe(true);
+    expect(canDecode(result, width, height)).toBe(true);
+
+    const { compressedData } = parsePngChunks(result);
+    const parsed = parseZlibDeflate(compressedData);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    expect(parsed.output.length).toBe(expectedFilteredLength);
+    for (const block of parsed.blocks) {
+        expect(block.btype).toBeGreaterThanOrEqual(0);
+        expect(block.btype).toBeLessThanOrEqual(2);
+    }
+}
+
+function diffByteCount(left: Uint8Array, right: Uint8Array): number {
+    let diff = 0;
+    const length = Math.min(left.length, right.length);
+    for (let i = 0; i < length; i++) {
+        if (left[i] !== right[i]) diff++;
+    }
+    return diff + Math.abs(left.length - right.length);
+}
+
 // Helper: create a PngDomainState from raw PNG bytes (bypasses DOM canvas)
 async function prepareState(pngBytes: Uint8Array): Promise<PngDomainState> {
     const domain = new PngDomain();
-    // Manually prepare state since we can't use encode() without DOM
-    const { metadata, compressedData } = parsePngChunks(pngBytes);
-    const filteredData = await inflateCompressed(compressedData);
-    const scanlines = computeScanlines(filteredData, metadata);
-    const analysis = {
-        filteredData: { length: filteredData.length - scanlines.length, resolve: (i: number) => {
-            const bytesPerRow = scanlines.length > 0 ? scanlines[0].dataLength : 0;
-            const scanline = Math.floor(i / bytesPerRow);
-            return i + scanline + 1;
-        }},
-        filterTypes: scanlines.map((s: any) => s.filterTypeOffset),
-        compressedData: { length: compressedData.length, resolve: (i: number) => i },
-    };
-    return { originalBytes: pngBytes, analysis, filteredData, compressedData, scanlines, metadata } as PngDomainState;
+    return await domain.prepare(pngBytes) as PngDomainState;
 }
 
 // Helper: make a replace glitch with fixed count (like pnglitch's 50 operations)
@@ -101,6 +113,7 @@ function makeReplaceGlitch(count: number) {
     c.countRange = { min: count, max: count };
     c.valueRange = { min: 0, max: 254 };
     c.spread = { min: 0, max: 100 };
+    c.randomize();
     return new FilterDataGlitch(new Position(50), c);
 }
 
@@ -108,6 +121,7 @@ function makeDefectGlitch(count: number) {
     const c = new GlitchValueCollection(DistributionKind.Random);
     c.countRange = { min: count, max: count };
     c.spread = { min: 0, max: 100 };
+    c.randomize();
     return new DefectGlitch(new Position(50), c);
 }
 
@@ -116,6 +130,7 @@ function makeCompressedReplaceGlitch(count: number) {
     c.countRange = { min: count, max: count };
     c.valueRange = { min: 0, max: 254 };
     c.spread = { min: 0, max: 100 };
+    c.randomize();
     return new CompressedReplaceGlitch(new Position(50), c);
 }
 
@@ -123,6 +138,7 @@ function makeCompressedDefectGlitch(count: number) {
     const c = new GlitchValueCollection(DistributionKind.Random);
     c.countRange = { min: count, max: count };
     c.spread = { min: 0, max: 100 };
+    c.randomize();
     return new CompressedDefectGlitch(new Position(50), c);
 }
 
@@ -194,60 +210,160 @@ for (const ft of FILTER_TYPES) {
     });
 }
 
-// ============================================================
-// Compressed data glitch: all methods
-// ============================================================
+test('parseZlibDeflate rejects dynamic tree corruption even if output length matches', () => {
+    const sample = new Uint8Array([
+        120, 156, 21, 137, 49, 1, 0, 0, 12, 130, 204, 100, 38, 51, 153, 137, 88, 155, 23, 34, 68, 4, 3, 169, 232, 207, 216, 214, 76, 207, 191, 150, 61, 180, 81, 208, 1, 58, 10, 21, 125,
+    ]);
+    const mutated = new Uint8Array(sample);
+    mutated[8] ^= 0x80;
+
+    const parsed = parseZlibDeflate(mutated);
+    expect(parsed.ok).toBe(false);
+});
 
 test('Compressed Replace: fuzz 20 runs', async () => {
-    const png = makePngBytes(64, 48);
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
     const state = await prepareState(png);
     const domain = new PngDomain();
+    const expectedFilteredLength = state.filteredData.length;
 
-    let decodableCount = 0;
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = makeCompressedReplaceGlitch(10);
         const result = await domain.generateFrame(state, [glitch]);
-        expect(isPngSignature(result)).toBe(true);
-        // Compressed data corruption may or may not be decodable
-        if (canDecode(result, 64, 48)) decodableCount++;
+        assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
-    // At least some should be decodable
-    expect(decodableCount).toBeGreaterThan(0);
 });
 
 test('Compressed Transpose: fuzz 20 runs', async () => {
-    const png = makePngBytes(64, 48);
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
     const state = await prepareState(png);
     const domain = new PngDomain();
+    const expectedFilteredLength = state.filteredData.length;
 
-    let decodableCount = 0;
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = new CompressedTransposeGlitch(4);
         const result = await domain.generateFrame(state, [glitch]);
-        expect(isPngSignature(result)).toBe(true);
-        if (canDecode(result, 64, 48)) decodableCount++;
+        assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
-    expect(decodableCount).toBeGreaterThan(0);
 });
 
 test('Compressed Defect: fuzz 20 runs', async () => {
-    const png = makePngBytes(64, 48);
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
     const state = await prepareState(png);
     const domain = new PngDomain();
+    const expectedFilteredLength = state.filteredData.length;
 
-    let decodableCount = 0;
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = makeCompressedDefectGlitch(5);
         const result = await domain.generateFrame(state, [glitch]);
-        expect(isPngSignature(result)).toBe(true);
-        if (canDecode(result, 64, 48)) decodableCount++;
+        assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
-    expect(decodableCount).toBeGreaterThan(0);
 });
 
-// ============================================================
-// Graft glitch: all 5 filter type values
-// ============================================================
+test('Compressed Replace: produces non-trivial filtered-data change across repeated runs', async () => {
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
+    const state = await prepareState(png);
+    const domain = new PngDomain();
+
+    let changedRuns = 0;
+    for (let run = 0; run < 8; run++) {
+        const glitch = makeCompressedReplaceGlitch(10);
+        const result = await domain.generateFrame(state, [glitch]);
+        assertValidCompressedPng(result, width, height, state.filteredData.length);
+        const { compressedData } = parsePngChunks(result);
+        const parsed = parseZlibDeflate(compressedData);
+        expect(parsed.ok).toBe(true);
+        if (parsed.ok && diffByteCount(parsed.output, state.filteredData) > 0) {
+            changedRuns++;
+        }
+    }
+
+    expect(changedRuns).toBeGreaterThan(0);
+});
+
+test('Compressed Defect: produces non-trivial filtered-data change across repeated runs', async () => {
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
+    const state = await prepareState(png);
+    const domain = new PngDomain();
+
+    let changedRuns = 0;
+    for (let run = 0; run < 8; run++) {
+        const glitch = makeCompressedDefectGlitch(5);
+        const result = await domain.generateFrame(state, [glitch]);
+        assertValidCompressedPng(result, width, height, state.filteredData.length);
+        const { compressedData } = parsePngChunks(result);
+        const parsed = parseZlibDeflate(compressedData);
+        expect(parsed.ok).toBe(true);
+        if (parsed.ok && diffByteCount(parsed.output, state.filteredData) > 0) {
+            changedRuns++;
+        }
+    }
+
+    expect(changedRuns).toBeGreaterThan(0);
+});
+
+test('Compressed Transpose: produces non-trivial filtered-data change across repeated runs', async () => {
+    const width = 64;
+    const height = 48;
+    const png = makePngBytes(width, height);
+    const state = await prepareState(png);
+    const domain = new PngDomain();
+
+    let changedRuns = 0;
+    for (let run = 0; run < 8; run++) {
+        const glitch = new CompressedTransposeGlitch(4);
+        const result = await domain.generateFrame(state, [glitch]);
+        assertValidCompressedPng(result, width, height, state.filteredData.length);
+        const { compressedData } = parsePngChunks(result);
+        const parsed = parseZlibDeflate(compressedData);
+        expect(parsed.ok).toBe(true);
+        if (parsed.ok && diffByteCount(parsed.output, state.filteredData) > 0) {
+            changedRuns++;
+        }
+    }
+
+    expect(changedRuns).toBeGreaterThan(0);
+});
+
+test('Compressed Replace stress: 100 runs stay decodable', async () => {
+    const width = 96;
+    const height = 72;
+    const png = makePngBytes(width, height);
+    const state = await prepareState(png);
+    const domain = new PngDomain();
+    const expectedFilteredLength = state.filteredData.length;
+
+    for (let run = 0; run < 100; run++) {
+        const glitch = makeCompressedReplaceGlitch(20);
+        const result = await domain.generateFrame(state, [glitch]);
+        assertValidCompressedPng(result, width, height, expectedFilteredLength);
+    }
+});
+
+test('Compressed Transpose stress: 100 runs stay decodable', async () => {
+    const width = 96;
+    const height = 72;
+    const png = makePngBytes(width, height);
+    const state = await prepareState(png);
+    const domain = new PngDomain();
+    const expectedFilteredLength = state.filteredData.length;
+
+    for (let run = 0; run < 100; run++) {
+        const glitch = new CompressedTransposeGlitch(6);
+        const result = await domain.generateFrame(state, [glitch]);
+        assertValidCompressedPng(result, width, height, expectedFilteredLength);
+    }
+});
 
 for (const graftValue of [0, 1, 2, 3, 4]) {
     test(`Graft filter type ${graftValue}: fuzz ${FUZZ_RUNS} runs`, async () => {
@@ -309,18 +425,6 @@ test('CustomFilterGlitch (reversed reference): fuzz 20 runs', async () => {
         expect(isPngSignature(result)).toBe(true);
         expect(canDecode(result, 64, 48)).toBe(true);
     }
-});
-
-// ============================================================
-// assemblePng: raw compressed data assembly
-// ============================================================
-
-test('assemblePng: produces valid PNG from unmodified compressed data', async () => {
-    const png = makePngBytes(32, 24);
-    const { metadata, compressedData } = parsePngChunks(png);
-    const assembled = assemblePng(compressedData, metadata);
-    expect(isPngSignature(assembled)).toBe(true);
-    expect(canDecode(assembled, 32, 24)).toBe(true);
 });
 
 test('assemblePng: produces PNG with valid signature even with corrupted data', async () => {

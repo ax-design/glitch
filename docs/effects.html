@@ -149,7 +149,6 @@
             var c = new G.GlitchValueCollection(G.DistributionKind.Random);
             c.countRange = { min: count, max: count };
             c.valueRange = { min: valueMin, max: valueMax };
-            c.spread = { min: 0, max: 100 };
             return c;
         }
 
@@ -165,7 +164,6 @@
         function defectGlitch() {
             var c = new G.GlitchValueCollection(G.DistributionKind.Random);
             c.countRange = { min: 8, max: 12 };
-            c.spread = { min: 0, max: 100 };
             return new G.DefectGlitch(
                 new G.Position(50),
                 c
@@ -185,7 +183,6 @@
         function compressedDefectGlitch() {
             var c = new G.GlitchValueCollection(G.DistributionKind.Random);
             c.countRange = { min: 3, max: 5 };
-            c.spread = { min: 0, max: 100 };
             return new G.CompressedDefectGlitch(
                 new G.Position(50),
                 c

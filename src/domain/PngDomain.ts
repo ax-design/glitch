@@ -13,12 +13,21 @@ import {
     buildFilterTypePool,
 } from '../core/PngProcessor.js';
 import type { ScanlineInfo, PngMetadata } from '../core/PngProcessor.js';
+import {
+    parseZlibDeflate,
+    repairZlibDeflate,
+} from '../core/DeflateRepair.js';
+import type {
+    DeflateRepairAcceptance,
+    ZlibTraceSuccess,
+} from '../core/DeflateRepair.js';
 
 export interface PngDomainState extends DomainState {
     filteredData: Uint8Array;
     compressedData: Uint8Array;
     scanlines: ScanlineInfo[];
     metadata: PngMetadata;
+    compressedTrace: ZlibTraceSuccess;
 }
 
 const DEFAULT_MAX_DIMENSION = 1024;
@@ -51,8 +60,22 @@ export class PngDomain implements GlitchDomain {
         const filteredData = await inflateCompressed(compressedData);
         const scanlines = computeScanlines(filteredData, metadata);
         const analysis = this._buildAnalysis(filteredData, scanlines, compressedData);
+        const compressedTrace = parseZlibDeflate(compressedData);
 
-        return { originalBytes: bytes, analysis, filteredData, compressedData, scanlines, metadata };
+        if (!compressedTrace.ok) {
+            throw new Error(`Original PNG compressed data failed custom Deflate parse: ${compressedTrace.error.message}`);
+        }
+
+        if (compressedTrace.output.length !== filteredData.length) {
+            throw new Error('Custom Deflate parser output length mismatch');
+        }
+        for (let i = 0; i < filteredData.length; i++) {
+            if (compressedTrace.output[i] !== filteredData[i]) {
+                throw new Error(`Custom Deflate parser output mismatch at byte ${i}`);
+            }
+        }
+
+        return { originalBytes: bytes, analysis, filteredData, compressedData, scanlines, metadata, compressedTrace };
     }
 
     async generateFrame(state: DomainState, glitches: BaseGlitch[]): Promise<Uint8Array> {
@@ -62,7 +85,6 @@ export class PngDomain implements GlitchDomain {
             return new Uint8Array(pngState.originalBytes);
         }
 
-        // Split glitches by target
         const compressedGlitches: BaseGlitch[] = [];
         const filteredGlitches: BaseGlitch[] = [];
         let customFilterGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch | null = null;
@@ -77,17 +99,14 @@ export class PngDomain implements GlitchDomain {
             }
         }
 
-        // Compressed data path: glitch the raw Deflate stream, then assemble directly
         if (compressedGlitches.length > 0) {
             return this._applyCompressedGlitches(pngState, compressedGlitches, filteredGlitches, customFilterGlitch);
         }
 
-        // Custom filter path
         if (customFilterGlitch) {
             return this._applyCustomFilterGlitch(pngState, customFilterGlitch, filteredGlitches);
         }
 
-        // Filtered data path
         if (filteredGlitches.length > 0) {
             return this._applyFilteredGlitches(pngState, filteredGlitches);
         }
@@ -128,51 +147,137 @@ export class PngDomain implements GlitchDomain {
         filteredGlitches: BaseGlitch[],
         customFilterGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch | null,
     ): Promise<Uint8Array> {
-        // Corrupt the compressed (Deflate) stream directly
-        const compressedData = new Uint8Array(pngState.compressedData);
+        let candidateCompressed = new Uint8Array(pngState.compressedData);
         const compressedPool = pngState.analysis.compressedData;
 
         for (const glitch of compressedGlitches) {
-            glitch.apply(compressedData, compressedPool);
+            const result = glitch.apply(candidateCompressed, compressedPool);
+            if (result instanceof Uint8Array) {
+                candidateCompressed = new Uint8Array(result);
+            }
         }
 
-        // Try to inflate the corrupted data for filtered glitch path
-        try {
-            const filteredData = await inflateCompressed(compressedData);
-            const scanlines = computeScanlines(filteredData, pngState.metadata);
+        const candidateParsed = parseZlibDeflate(candidateCompressed);
+        let baseFilteredData = new Uint8Array(pngState.filteredData);
+        let repairedCompressedData: Uint8Array | null = null;
+        let hasCompressedEffect = false;
 
-            if (customFilterGlitch) {
-                const reencoded = reencodeWithCustomFilter(
-                    filteredData, scanlines, pngState.metadata,
-                    customFilterGlitch.encoder, customFilterGlitch.scanlineRange,
-                );
-                for (const glitch of filteredGlitches) {
-                    const pool = pngState.analysis[glitch.targetPool];
-                    if (pool) glitch.apply(reencoded, pool);
+        const directStabilized = this._stabilizeCompressedFilteredData(candidateParsed.output, pngState);
+        if (directStabilized.changedBytes > 0) {
+            baseFilteredData = new Uint8Array(directStabilized.filteredData);
+            hasCompressedEffect = true;
+        } else {
+            const repaired = repairZlibDeflate(
+                candidateCompressed,
+                pngState.compressedTrace,
+                (output) => this._acceptCompressedRepairOutput(output, pngState),
+            );
+
+            if (repaired) {
+                const stabilized = this._stabilizeCompressedFilteredData(repaired.filteredData, pngState);
+                baseFilteredData = new Uint8Array(stabilized.filteredData);
+                hasCompressedEffect = stabilized.changedBytes > 0;
+                if (stabilized.patchedFilterBytes === 0) {
+                    repairedCompressedData = new Uint8Array(repaired.compressedData);
                 }
-                return rebuildPng(reencoded, pngState.metadata);
             }
-
-            for (const glitch of filteredGlitches) {
-                const pool = pngState.analysis[glitch.targetPool];
-                if (pool) glitch.apply(filteredData, pool);
-            }
-            return rebuildPng(filteredData, pngState.metadata);
-        } catch {
-            // Inflation failed, assemble PNG with corrupted compressed data directly.
-            // Browser will attempt partial decode.
-            return assemblePng(compressedData, pngState.metadata);
         }
+
+        if (customFilterGlitch) {
+            let reencoded = reencodeWithCustomFilter(
+                baseFilteredData,
+                pngState.scanlines,
+                pngState.metadata,
+                customFilterGlitch.encoder,
+                customFilterGlitch.scanlineRange,
+            );
+            reencoded = this._applyFilteredGlitchesToBytes(pngState, reencoded, filteredGlitches);
+            return rebuildPng(reencoded, pngState.metadata);
+        }
+
+        if (filteredGlitches.length > 0) {
+            const filteredData = this._applyFilteredGlitchesToBytes(pngState, new Uint8Array(baseFilteredData), filteredGlitches);
+            return rebuildPng(filteredData, pngState.metadata);
+        }
+
+        if (repairedCompressedData) {
+            return assemblePng(repairedCompressedData, pngState.metadata);
+        }
+
+        if (hasCompressedEffect) {
+            return rebuildPng(baseFilteredData, pngState.metadata);
+        }
+
+        return new Uint8Array(pngState.originalBytes);
+    }
+
+    private _applyFilteredGlitchesToBytes(
+        pngState: PngDomainState,
+        filteredData: Uint8Array,
+        glitches: BaseGlitch[],
+    ): Uint8Array {
+        let next = filteredData;
+        for (const glitch of glitches) {
+            const pool = pngState.analysis[glitch.targetPool];
+            if (!pool) continue;
+            const result = glitch.apply(next, pool);
+            if (result instanceof Uint8Array) {
+                next = new Uint8Array(result);
+            }
+        }
+        return next;
+    }
+
+    private _acceptCompressedRepairOutput(filteredData: Uint8Array, pngState: PngDomainState): DeflateRepairAcceptance {
+        const expectedLength = pngState.filteredData.length;
+        if (filteredData.length !== expectedLength) {
+            return { ok: false, anchorOutputOffset: Math.min(filteredData.length, expectedLength) };
+        }
+
+        const scanlines = computeScanlines(filteredData, pngState.metadata);
+        if (scanlines.length !== pngState.scanlines.length) {
+            return { ok: false, anchorOutputOffset: 0 };
+        }
+
+        const lastScanline = scanlines[scanlines.length - 1];
+        const coveredEnd = lastScanline.dataStart + lastScanline.dataLength;
+        if (coveredEnd !== filteredData.length) {
+            return { ok: false, anchorOutputOffset: coveredEnd };
+        }
+
+        return { ok: true };
+    }
+
+    private _stabilizeCompressedFilteredData(
+        filteredData: Uint8Array,
+        pngState: PngDomainState,
+    ): { filteredData: Uint8Array; patchedFilterBytes: number; changedBytes: number } {
+        const next = new Uint8Array(pngState.filteredData);
+        const copyLength = Math.min(filteredData.length, next.length);
+        next.set(filteredData.subarray(0, copyLength));
+
+        const scanlines = computeScanlines(next, pngState.metadata);
+        let patchedFilterBytes = 0;
+        for (const scanline of scanlines) {
+            const offset = scanline.filterTypeOffset;
+            if (next[offset] > 4) {
+                next[offset] = pngState.filteredData[offset];
+                patchedFilterBytes++;
+            }
+        }
+
+        let changedBytes = 0;
+        for (let i = 0; i < next.length; i++) {
+            if (next[i] !== pngState.filteredData[i]) {
+                changedBytes++;
+            }
+        }
+
+        return { filteredData: next, patchedFilterBytes, changedBytes };
     }
 
     private async _applyFilteredGlitches(pngState: PngDomainState, glitches: BaseGlitch[]): Promise<Uint8Array> {
-        const filteredData = new Uint8Array(pngState.filteredData);
-
-        for (const glitch of glitches) {
-            const pool = pngState.analysis[glitch.targetPool];
-            if (pool) glitch.apply(filteredData, pool);
-        }
-
+        const filteredData = this._applyFilteredGlitchesToBytes(pngState, new Uint8Array(pngState.filteredData), glitches);
         return rebuildPng(filteredData, pngState.metadata);
     }
 
@@ -181,21 +286,14 @@ export class PngDomain implements GlitchDomain {
         customGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch,
         otherGlitches: BaseGlitch[],
     ): Promise<Uint8Array> {
-        const filteredData = new Uint8Array(pngState.filteredData);
-        const reencoded = reencodeWithCustomFilter(
-            filteredData,
+        let reencoded = reencodeWithCustomFilter(
+            new Uint8Array(pngState.filteredData),
             pngState.scanlines,
             pngState.metadata,
             customGlitch.encoder,
             customGlitch.scanlineRange,
         );
-
-        for (const glitch of otherGlitches) {
-            if (glitch === customGlitch) continue;
-            const pool = pngState.analysis[glitch.targetPool];
-            if (pool) glitch.apply(reencoded, pool);
-        }
-
+        reencoded = this._applyFilteredGlitchesToBytes(pngState, reencoded, otherGlitches.filter((glitch) => glitch !== customGlitch));
         return rebuildPng(reencoded, pngState.metadata);
     }
 }

@@ -16,7 +16,7 @@ export class CustomFilterGlitch extends PngGlitch {
         this.scanlineRange = scanlineRange;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
         // CustomFilterGlitch is handled specially by PngDomain.
         // The domain detects this glitch type and uses the full
         // decode/reencode pipeline instead of direct byte manipulation.

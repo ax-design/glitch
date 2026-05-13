@@ -17,11 +17,9 @@ export class DefectGlitch extends PngGlitch {
         this.val = val;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
-        if (pool.length === 0) return;
-
-        const numScanlines = bytes.length - pool.length;
-        if (numScanlines === 0) return;
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
+        const scanlineOffsets = (pool as any).scanlineOffsets as number[] | undefined;
+        if (!scanlineOffsets || scanlineOffsets.length === 0) return;
 
         // Collect byte positions to delete
         let defectPositions: number[];
@@ -52,13 +50,11 @@ export class DefectGlitch extends PngGlitch {
         }
 
         // After byte shift, filter type positions contain random data.
-        // Replace with random valid filter types (0-4) to simulate what
-        // pnglitch does: shifted data bytes land at filter type positions.
-        const bytesPerRow = pool.length / numScanlines;
-        const rawRowBytes = bytesPerRow + 1;
-        for (let s = 0; s < numScanlines; s++) {
-            const ftPos = s * rawRowBytes;
-            bytes[ftPos] = Math.floor(Math.random() * 5);
+        // Replace with random valid filter types (0-4) at known offsets.
+        for (const ftPos of scanlineOffsets) {
+            if (ftPos < bytes.length) {
+                bytes[ftPos] = Math.floor(Math.random() * 5);
+            }
         }
     }
 }

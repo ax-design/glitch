@@ -12,13 +12,19 @@ export class CompressedTransposeGlitch extends PngGlitch {
         this.chunkCount = chunkCount ?? 4;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
-        if (bytes.length <= 1) return;
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
+        if (bytes.length <= 64 || pool.length <= 64) return;
 
-        const n = Math.min(this.chunkCount, bytes.length);
+        const payloadLength = bytes.length - 6;
+        const segmentStart = 2 + Math.floor(payloadLength * 0.2);
+        const segmentEnd = Math.max(segmentStart + 1, 2 + Math.floor(payloadLength * 0.9));
+
+        const data = bytes.slice(segmentStart, segmentEnd);
+
+        const n = Math.min(this.chunkCount, data.length);
         if (n <= 1) return;
 
-        const chunkSize = Math.floor(bytes.length / n);
+        const chunkSize = Math.floor(data.length / n);
 
         const order = Array.from({ length: n }, (_, i) => i);
         for (let i = n - 1; i > 0; i--) {
@@ -28,17 +34,17 @@ export class CompressedTransposeGlitch extends PngGlitch {
             order[j] = tmp;
         }
 
-        const result = new Uint8Array(bytes.length);
+        const result = new Uint8Array(data.length);
         let offset = 0;
         for (let k = 0; k < n; k++) {
             const idx = order[k];
             const start = idx * chunkSize;
-            const end = idx === n - 1 ? bytes.length : start + chunkSize;
-            const len = Math.min(end - start, bytes.length - offset);
-            result.set(bytes.subarray(start, start + len), offset);
+            const end = idx === n - 1 ? data.length : start + chunkSize;
+            const len = Math.min(end - start, data.length - offset);
+            result.set(data.subarray(start, start + len), offset);
             offset += len;
         }
 
-        bytes.set(result);
+        bytes.set(result, segmentStart);
     }
 }

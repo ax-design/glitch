@@ -16,7 +16,7 @@ export class HuffmanGlitch extends BaseGlitch {
         this.val = val;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
         if (pool.length === 0) return;
 
         if (this.val instanceof GlitchValue) {

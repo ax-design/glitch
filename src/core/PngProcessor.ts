@@ -4,6 +4,7 @@ export interface ScanlineInfo {
     filterTypeOffset: number;
     dataStart: number;
     dataLength: number;
+    passIndex?: number;
 }
 
 export interface PngMetadata {
@@ -43,16 +44,16 @@ for (let i = 0; i < 256; i++) {
     CRC_TABLE[i] = c;
 }
 
-function crc32(data: Uint8Array, seed: number = 0): number {
-    let crc = seed ^ 0xffffffff;
+function crc32(data: Uint8Array, seed: number = 0xffffffff): number {
+    let crc = seed;
     for (let i = 0; i < data.length; i++) {
         crc = CRC_TABLE[(crc ^ data[i]) & 0xff] ^ (crc >>> 8);
     }
-    return (crc ^ 0xffffffff) >>> 0;
+    return crc;
 }
 
 function readUint32BE(bytes: Uint8Array, offset: number): number {
-    return (bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3];
+    return ((bytes[offset] << 24) | (bytes[offset + 1] << 16) | (bytes[offset + 2] << 8) | bytes[offset + 3]) >>> 0;
 }
 
 function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
@@ -167,7 +168,8 @@ function computeInterlacedScanlines(filteredData: Uint8Array, metadata: PngMetad
     const scanlines: ScanlineInfo[] = [];
     let offset = 0;
 
-    for (const pass of passDimensions) {
+    for (let passIdx = 0; passIdx < passDimensions.length; passIdx++) {
+        const pass = passDimensions[passIdx];
         const passWidth = Math.ceil((metadata.width - pass.xStart) / pass.xStep);
         const passHeight = Math.ceil((metadata.height - pass.yStart) / pass.yStep);
         if (passWidth <= 0 || passHeight <= 0) continue;
@@ -180,6 +182,7 @@ function computeInterlacedScanlines(filteredData: Uint8Array, metadata: PngMetad
                 filterTypeOffset: offset,
                 dataStart: offset + 1,
                 dataLength: bytesPerRow,
+                passIndex: passIdx,
             });
             offset += stride;
         }
@@ -320,8 +323,14 @@ export function reencodeWithFilter(
 ): Uint8Array {
     const result = new Uint8Array(filteredData.length);
     let prevDecoded: Uint8Array | null = null;
+    let lastPass = -1;
 
     for (const scanline of scanlines) {
+        if (scanline.passIndex !== undefined && scanline.passIndex !== lastPass) {
+            prevDecoded = null;
+            lastPass = scanline.passIndex;
+        }
+
         const currentFilterType = filteredData[scanline.filterTypeOffset];
         const currentData = filteredData.slice(scanline.dataStart, scanline.dataStart + scanline.dataLength);
 
@@ -347,9 +356,15 @@ export function reencodeWithCustomFilter(
 ): Uint8Array {
     const result = new Uint8Array(filteredData.length);
     let prevDecoded: Uint8Array | null = null;
+    let lastPass = -1;
 
     for (let i = 0; i < scanlines.length; i++) {
         const scanline = scanlines[i];
+        if (scanline.passIndex !== undefined && scanline.passIndex !== lastPass) {
+            prevDecoded = null;
+            lastPass = scanline.passIndex;
+        }
+
         const currentFilterType = filteredData[scanline.filterTypeOffset];
         const currentData = filteredData.slice(scanline.dataStart, scanline.dataStart + scanline.dataLength);
 
@@ -374,6 +389,16 @@ export function reencodeWithCustomFilter(
     return result;
 }
 
+export function computeAdler32(data: Uint8Array): number {
+    let s1 = 1;
+    let s2 = 0;
+    for (let i = 0; i < data.length; i++) {
+        s1 = (s1 + data[i]) % 65521;
+        s2 = (s2 + s1) % 65521;
+    }
+    return ((s2 << 16) | s1) >>> 0;
+}
+
 export async function rebuildPng(filteredData: Uint8Array, metadata: PngMetadata): Promise<Uint8Array> {
     const compressed = await deflateFiltered(filteredData);
     return assemblePng(compressed, metadata);
@@ -381,8 +406,11 @@ export async function rebuildPng(filteredData: Uint8Array, metadata: PngMetadata
 
 export function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): Uint8Array {
     const typeBytes = new Uint8Array([73, 68, 65, 84]);
-    const crcBase = crc32(typeBytes);
-    const dataCrc = crc32(compressedData, crcBase);
+    
+    // Calculate CRC32 of [Type][Data]
+    let crcRaw = crc32(typeBytes);
+    crcRaw = crc32(compressedData, crcRaw);
+    const finalCrc = (crcRaw ^ 0xffffffff) >>> 0;
 
     const idatLength = new Uint8Array(4);
     idatLength[0] = (compressedData.length >>> 24) & 0xff;
@@ -391,10 +419,10 @@ export function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): 
     idatLength[3] = compressedData.length & 0xff;
 
     const idatCrc = new Uint8Array(4);
-    idatCrc[0] = (dataCrc >>> 24) & 0xff;
-    idatCrc[1] = (dataCrc >>> 16) & 0xff;
-    idatCrc[2] = (dataCrc >>> 8) & 0xff;
-    idatCrc[3] = dataCrc & 0xff;
+    idatCrc[0] = (finalCrc >>> 24) & 0xff;
+    idatCrc[1] = (finalCrc >>> 16) & 0xff;
+    idatCrc[2] = (finalCrc >>> 8) & 0xff;
+    idatCrc[3] = finalCrc & 0xff;
 
     const parts = [
         metadata.headBytes,
@@ -409,13 +437,33 @@ export function assemblePng(compressedData: Uint8Array, metadata: PngMetadata): 
 }
 
 export function buildFilteredDataPool(filteredData: Uint8Array, scanlines: ScanlineInfo[]): import('../params/Pool.js').VirtualPool {
-    const bytesPerRow = scanlines.length > 0 ? scanlines[0].dataLength : 0;
     const length = filteredData.length - scanlines.length;
+    const offsets = scanlines.map(s => s.filterTypeOffset);
+    const dataLengths = scanlines.map(s => s.dataLength);
+    const cumPixelCounts = new Uint32Array(scanlines.length + 1);
+    for (let i = 0; i < scanlines.length; i++) {
+        cumPixelCounts[i + 1] = cumPixelCounts[i] + dataLengths[i];
+    }
+
     return {
         length,
+        scanlineOffsets: offsets,
         resolve(index: number): number {
-            const scanline = Math.floor(index / bytesPerRow);
-            return index + scanline + 1;
+            // Find which scanline this index belongs to using binary search on cumPixelCounts
+            let low = 0;
+            let high = scanlines.length - 1;
+            let sIdx = 0;
+            while (low <= high) {
+                const mid = (low + high) >>> 1;
+                if (index >= cumPixelCounts[mid]) {
+                    sIdx = mid;
+                    low = mid + 1;
+                } else {
+                    high = mid - 1;
+                }
+            }
+            const offsetInScanline = index - cumPixelCounts[sIdx];
+            return scanlines[sIdx].dataStart + offsetInScanline;
         },
     };
 }

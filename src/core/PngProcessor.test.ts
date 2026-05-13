@@ -1,6 +1,16 @@
 import { test, expect, beforeAll } from 'bun:test';
 import CanvasKitInit from 'canvaskit-wasm';
-import { parsePngChunks, inflateCompressed, deflateFiltered, computeScanlines, rebuildPng, reencodeWithFilter, buildFilteredDataPool, buildFilterTypePool } from './PngProcessor.js';
+import {
+    parsePngChunks,
+    inflateCompressed,
+    deflateFiltered,
+    computeScanlines,
+    rebuildPng,
+    reencodeWithFilter,
+    buildFilteredDataPool,
+    buildFilterTypePool,
+} from './PngProcessor.js';
+import { parseZlibDeflate, repairZlibDeflate } from './DeflateRepair.js';
 
 let CanvasKit: any;
 
@@ -49,9 +59,167 @@ function canDecode(bytes: Uint8Array, width: number, height: number): boolean {
     }
 }
 
-// ============================================================
-// PNG Chunk Parsing
-// ============================================================
+function makeStoredZlibSample(): Uint8Array {
+    return new Uint8Array([
+        120, 1, 1, 30, 0, 225, 255,
+        115, 116, 111, 114, 101, 100, 45, 98, 108, 111, 99, 107, 45, 115, 97, 109, 112, 108, 101, 45, 49, 50, 51, 52, 53, 54, 55, 56, 57, 48,
+        170, 171, 9, 179,
+    ]);
+}
+
+function makeDynamicZlibSample(): Uint8Array {
+    return new Uint8Array([
+        120, 156, 21, 137, 49, 1, 0, 0, 12, 130, 204, 100, 38, 51, 153, 137, 88, 155, 23, 34, 68, 4, 3, 169, 232, 207, 216, 214, 76, 207, 191, 150, 61, 180, 81, 208, 1, 58, 10, 21, 125,
+    ]);
+}
+
+function makeDynamicSampleOutput(): Uint8Array {
+    return new Uint8Array([
+        200, 100, 0, 200, 100, 200, 50, 200, 200, 200, 100, 150, 0, 200, 150, 100, 200, 50, 100, 50, 50, 50, 0, 200, 100, 150, 0, 0, 50, 50, 0, 0, 200, 150, 200, 100, 200, 50, 50, 200, 150, 200, 100, 150, 150, 100, 0, 100, 200, 0,
+    ]);
+}
+
+function makeRepairAcceptance(expectedLength: number) {
+    return (output: Uint8Array) => ({ ok: output.length === expectedLength });
+}
+
+test('parseZlibDeflate: parses stored block sample', async () => {
+    const sample = makeStoredZlibSample();
+    const parsed = parseZlibDeflate(sample);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const inflated = await inflateCompressed(sample);
+    expect(parsed.output).toEqual(inflated);
+    expect(parsed.blocks.length).toBe(1);
+    expect(parsed.blocks[0].btype).toBe(0);
+    expect(parsed.symbols.length).toBe(1);
+    expect(parsed.symbols[0].kind).toBe('stored');
+});
+
+test('parseZlibDeflate: parses PNG data for browser-generated sample', async () => {
+    const png = makePngBytes(32, 24);
+    const { compressedData } = parsePngChunks(png);
+    const parsed = parseZlibDeflate(compressedData);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const inflated = await inflateCompressed(compressedData);
+    expect(parsed.output).toEqual(inflated);
+    expect(parsed.blocks.length).toBeGreaterThan(0);
+    expect(parsed.blocks[0].btype).toBeGreaterThanOrEqual(0);
+    expect(parsed.blocks[0].btype).toBeLessThanOrEqual(2);
+});
+
+test('parseZlibDeflate: parses dynamic Huffman sample', async () => {
+    const sample = makeDynamicZlibSample();
+    const parsed = parseZlibDeflate(sample);
+
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+
+    const inflated = await inflateCompressed(sample);
+    expect(parsed.output).toEqual(inflated);
+    expect(parsed.output).toEqual(makeDynamicSampleOutput());
+    expect(parsed.blocks.length).toBe(1);
+    expect(parsed.blocks[0].btype).toBe(2);
+    expect(parsed.blocks[0].treeBitStart).toBeDefined();
+    expect(parsed.blocks[0].treeBitEnd).toBeDefined();
+});
+
+test('repairZlibDeflate: repairs fixed Huffman byte corruption', async () => {
+    const png = makePngBytes(48, 32);
+    const { compressedData } = parsePngChunks(png);
+    const baseline = parseZlibDeflate(compressedData);
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+
+    const mutated = new Uint8Array(compressedData);
+    mutated[12] ^= 0x5a;
+    mutated[19] ^= 0x33;
+
+    const repaired = repairZlibDeflate(mutated, baseline, makeRepairAcceptance(baseline.output.length));
+    expect(repaired).not.toBeNull();
+    if (!repaired) return;
+
+    expect(repaired.filteredData.length).toBe(baseline.output.length);
+    const reinflated = await inflateCompressed(repaired.compressedData);
+    expect(reinflated).toEqual(repaired.filteredData);
+});
+
+test('repairZlibDeflate: repairs dynamic Huffman corruption', async () => {
+    const sample = makeDynamicZlibSample();
+    const baseline = parseZlibDeflate(sample);
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+
+    const mutated = new Uint8Array(sample);
+    mutated[8] ^= 0x80;
+
+    const repaired = repairZlibDeflate(mutated, baseline, makeRepairAcceptance(baseline.output.length));
+    expect(repaired).not.toBeNull();
+    if (!repaired) return;
+
+    const reinflated = await inflateCompressed(repaired.compressedData);
+    expect(reinflated).toEqual(repaired.filteredData);
+    expect(repaired.filteredData.length).toBe(baseline.output.length);
+});
+
+test('repairZlibDeflate: repairs stored block corruption with suffix fallback', async () => {
+    const sample = makeStoredZlibSample();
+    const baseline = parseZlibDeflate(sample);
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+
+    const mutated = new Uint8Array(sample);
+    mutated[10] ^= 0xff;
+    mutated[11] ^= 0xff;
+
+    const repaired = repairZlibDeflate(mutated, baseline, makeRepairAcceptance(baseline.output.length));
+    expect(repaired).not.toBeNull();
+    if (!repaired) return;
+
+    const reinflated = await inflateCompressed(repaired.compressedData);
+    expect(reinflated).toEqual(repaired.filteredData);
+    expect(repaired.filteredData.length).toBe(baseline.output.length);
+});
+
+test('repairZlibDeflate: large transposed payload repairs quickly', async () => {
+    const png = makePngBytes(384, 256);
+    const { compressedData } = parsePngChunks(png);
+    const baseline = parseZlibDeflate(compressedData);
+    expect(baseline.ok).toBe(true);
+    if (!baseline.ok) return;
+
+    const mutated = new Uint8Array(compressedData);
+    const payload = mutated.slice(2, mutated.length - 4);
+    const chunkCount = 4;
+    const chunkSize = Math.floor(payload.length / chunkCount);
+    const transposed = new Uint8Array(payload.length);
+    let offset = 0;
+    for (const idx of [2, 0, 3, 1]) {
+        const start = idx * chunkSize;
+        const end = idx === chunkCount - 1 ? payload.length : start + chunkSize;
+        transposed.set(payload.subarray(start, end), offset);
+        offset += end - start;
+    }
+    mutated.set(transposed, 2);
+
+    const started = performance.now();
+    const repaired = repairZlibDeflate(mutated, baseline, makeRepairAcceptance(baseline.output.length));
+    const elapsed = performance.now() - started;
+
+    expect(repaired).not.toBeNull();
+    if (!repaired) return;
+
+    expect(['block', 'block-suffix']).toContain(repaired.strategy);
+    expect(elapsed).toBeLessThan(1000);
+
+    const reinflated = await inflateCompressed(repaired.compressedData);
+    expect(reinflated).toEqual(repaired.filteredData);
+});
 
 test('parsePngChunks: extracts IHDR metadata correctly', () => {
     const png = makePngBytes(64, 48);

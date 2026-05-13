@@ -15,7 +15,7 @@ export class WidthGlitch extends BaseGlitch {
         this.val = val;
     }
 
-    apply(bytes: Uint8Array, pool: Pool): void {
+    apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
         if (pool.length === 0) return;
         const byteIndex = this.position.resolve(pool);
         if (byteIndex >= 0 && byteIndex < bytes.length) {
