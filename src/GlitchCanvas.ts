@@ -45,7 +45,7 @@ export class GlitchCanvas extends HTMLElement {
     private _initObserver: IntersectionObserver | null = null;
 
     static get observedAttributes(): string[] {
-        return ['src', 'fps', 'buffer-size', 'autoplay'];
+        return ['src', 'fps', 'buffer-size', 'autoplay', 'object-fit', 'object-position'];
     }
 
     constructor() {
@@ -56,7 +56,18 @@ export class GlitchCanvas extends HTMLElement {
         this._root.appendChild(this._canvas);
 
         const style = document.createElement('style');
-        style.textContent = ':host{display:inline-block;}';
+        style.textContent = `
+            :host {
+                display: inline-block;
+                overflow: hidden;
+                object-fit: fill;
+                object-position: 50% 50%;
+            }
+            canvas {
+                object-fit: inherit;
+                object-position: inherit;
+            }
+        `;
         this._root.insertBefore(style, this._canvas);
 
         this._bufferManager = new BufferManager(4);
@@ -99,6 +110,12 @@ export class GlitchCanvas extends HTMLElement {
                     this.play();
                 }
                 break;
+            case 'object-fit':
+                this._canvas.style.objectFit = newVal;
+                break;
+            case 'object-position':
+                this._canvas.style.objectPosition = newVal;
+                break;
         }
     }
 
@@ -139,6 +156,22 @@ export class GlitchCanvas extends HTMLElement {
         } else {
             this.removeAttribute('autoplay');
         }
+    }
+
+    get objectFit(): string {
+        return this.getAttribute('object-fit') ?? 'fill';
+    }
+
+    set objectFit(val: string) {
+        this.setAttribute('object-fit', val);
+    }
+
+    get objectPosition(): string {
+        return this.getAttribute('object-position') ?? '50% 50%';
+    }
+
+    set objectPosition(val: string) {
+        this.setAttribute('object-position', val);
     }
 
     // --- Playback ---
