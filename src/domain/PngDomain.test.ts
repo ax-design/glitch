@@ -1,5 +1,6 @@
 import { test, expect, beforeAll } from 'bun:test';
 import CanvasKitInit from 'canvaskit-wasm';
+import type { CanvasKit, Canvas } from 'canvaskit-wasm';
 import { parsePngChunks, assemblePng } from '../core/PngProcessor.js';
 import { parseZlibDeflate } from '../core/DeflateRepair.js';
 import { PngDomain } from './PngDomain.js';
@@ -18,7 +19,7 @@ import { GlitchValueCollection } from '../params/GlitchValueCollection.js';
 import { DensityValue } from '../params/DensityValue.js';
 import { DistributionKind } from '../params/Distribution.js';
 
-let CanvasKit: any;
+let CanvasKit: CanvasKit;
 
 beforeAll(async () => {
     const path = require('path') as typeof import('path');
@@ -29,7 +30,7 @@ beforeAll(async () => {
 });
 
 function makePngBytes(width: number, height: number): Uint8Array {
-    const surface = CanvasKit.MakeSurface(width, height);
+    const surface = CanvasKit.MakeSurface(width, height)!;
     const canvas = surface.getCanvas();
     const paint = new CanvasKit.Paint();
 
@@ -54,9 +55,10 @@ function makePngBytes(width: number, height: number): Uint8Array {
     return new Uint8Array(pngBytes!);
 }
 
-function makeCanvasFromPng(pngBytes: Uint8Array): any {
-    const img = CanvasKit.MakeImageFromEncoded(pngBytes);
-    const canvas = CanvasKit.MakeCanvas(img.width(), img.height());
+function makeCanvasFromPng(pngBytes: Uint8Array): Canvas {
+    const img = CanvasKit.MakeImageFromEncoded(pngBytes)!;
+    const surface = CanvasKit.MakeSurface(img.width(), img.height())!;
+    const canvas = surface.getCanvas();
     canvas.drawImage(img, 0, 0);
     return canvas;
 }

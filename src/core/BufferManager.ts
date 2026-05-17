@@ -257,7 +257,7 @@ export class BufferManager {
 
             if (mode === 'val' || mode === 'both') {
                 if ('val' in glitch) {
-                    const val = (glitch as any).val;
+                    const val = (glitch as { val: unknown }).val;
                     if (val instanceof GlitchValueCollection) {
                         val.randomize();
                     } else if (val instanceof DensityValue) {

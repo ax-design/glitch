@@ -1,5 +1,6 @@
 import { test, expect, beforeAll } from 'bun:test';
 import CanvasKitInit from 'canvaskit-wasm';
+import type { CanvasKit } from 'canvaskit-wasm';
 import {
     parsePngChunks,
     inflateCompressed,
@@ -12,7 +13,7 @@ import {
 } from './PngProcessor.js';
 import { parseZlibDeflate, repairZlibDeflate } from './DeflateRepair.js';
 
-let CanvasKit: any;
+let CanvasKit: CanvasKit;
 
 beforeAll(async () => {
     const path = require('path') as typeof import('path');
@@ -23,7 +24,7 @@ beforeAll(async () => {
 });
 
 function makePngBytes(width: number, height: number): Uint8Array {
-    const surface = CanvasKit.MakeSurface(width, height);
+    const surface = CanvasKit.MakeSurface(width, height)!;
     const canvas = surface.getCanvas();
     const paint = new CanvasKit.Paint();
 

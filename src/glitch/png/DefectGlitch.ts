@@ -18,7 +18,7 @@ export class DefectGlitch extends PngGlitch {
     }
 
     apply(bytes: Uint8Array, pool: Pool): Uint8Array | void {
-        const scanlineOffsets = (pool as any).scanlineOffsets as number[] | undefined;
+        const scanlineOffsets = 'scanlineOffsets' in pool ? pool.scanlineOffsets : undefined;
         if (!scanlineOffsets || scanlineOffsets.length === 0) return;
 
         // Collect byte positions to delete
