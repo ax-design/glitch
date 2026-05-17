@@ -58,10 +58,13 @@ function readUint32BE(bytes: Uint8Array, offset: number): number {
 
 function concatUint8Arrays(arrays: Uint8Array[]): Uint8Array {
     let totalLength = 0;
-    for (const arr of arrays) totalLength += arr.length;
+    const len = arrays.length;
+    for (let i = 0; i < len; i++) totalLength += arrays[i].length;
+    
     const result = new Uint8Array(totalLength);
     let offset = 0;
-    for (const arr of arrays) {
+    for (let i = 0; i < len; i++) {
+        const arr = arrays[i];
         result.set(arr, offset);
         offset += arr.length;
     }
@@ -76,7 +79,7 @@ export function parsePngChunks(bytes: Uint8Array): PngChunkLayout {
         }
     }
 
-    const headParts: Uint8Array[] = [bytes.slice(0, 8)];
+    const headParts: Uint8Array[] = [bytes.subarray(0, 8)];
     const tailParts: Uint8Array[] = [];
     const idatParts: Uint8Array[] = [];
     let metadata: PngMetadata | null = null;
@@ -102,12 +105,12 @@ export function parsePngChunks(bytes: Uint8Array): PngChunkLayout {
         }
 
         if (type === 'IDAT') {
-            idatParts.push(bytes.slice(dataStart, dataStart + length));
+            idatParts.push(bytes.subarray(dataStart, dataStart + length));
             foundIdat = true;
         } else if (foundIdat) {
-            tailParts.push(bytes.slice(pos, chunkEnd));
+            tailParts.push(bytes.subarray(pos, chunkEnd));
         } else {
-            headParts.push(bytes.slice(pos, chunkEnd));
+            headParts.push(bytes.subarray(pos, chunkEnd));
         }
 
         pos = chunkEnd;
@@ -130,7 +133,8 @@ export async function inflateCompressed(data: Uint8Array): Promise<Uint8Array> {
 }
 
 export async function deflateFiltered(data: Uint8Array): Promise<Uint8Array> {
-    return zlibSync(data, { level: 1 });
+    // Level 0 (no compression) is much faster and reduces CPU usage significantly for animations.
+    return zlibSync(data, { level: 0 });
 }
 
 export function computeScanlines(filteredData: Uint8Array, metadata: PngMetadata): ScanlineInfo[] {
@@ -192,65 +196,61 @@ function computeInterlacedScanlines(filteredData: Uint8Array, metadata: PngMetad
 }
 
 function filterNoneEncode(data: Uint8Array): Uint8Array {
-    return new Uint8Array(data);
+    return data;
 }
 
 function filterNoneDecode(data: Uint8Array): Uint8Array {
-    return new Uint8Array(data);
+    return data;
 }
 
-function filterSubEncode(data: Uint8Array, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
+function filterSubEncode(data: Uint8Array, sampleSize: number, out: Uint8Array): void {
+    out.set(data);
     for (let i = data.length - 1; i >= sampleSize; i--) {
-        result[i] = (data[i] - data[i - sampleSize]) & 0xff;
+        out[i] = (data[i] - data[i - sampleSize]) & 0xff;
     }
-    return result;
 }
 
-function filterSubDecode(data: Uint8Array, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
+function filterSubDecode(data: Uint8Array, sampleSize: number, out: Uint8Array): void {
+    out.set(data);
     for (let i = sampleSize; i < data.length; i++) {
-        result[i] = (result[i] + result[i - sampleSize]) & 0xff;
+        out[i] = (out[i] + out[i - sampleSize]) & 0xff;
     }
-    return result;
 }
 
-function filterUpEncode(data: Uint8Array, prev: Uint8Array | null): Uint8Array {
-    if (!prev) return new Uint8Array(data);
-    const result = new Uint8Array(data);
-    for (let i = data.length - 1; i >= 0; i--) {
-        result[i] = (data[i] - prev[i]) & 0xff;
+function filterUpEncode(data: Uint8Array, prev: Uint8Array | null, out: Uint8Array): void {
+    if (!prev) {
+        out.set(data);
+        return;
     }
-    return result;
-}
-
-function filterUpDecode(data: Uint8Array, prev: Uint8Array | null): Uint8Array {
-    if (!prev) return new Uint8Array(data);
-    const result = new Uint8Array(data);
     for (let i = 0; i < data.length; i++) {
-        result[i] = (result[i] + prev[i]) & 0xff;
+        out[i] = (data[i] - prev[i]) & 0xff;
     }
-    return result;
 }
 
-function filterAverageEncode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
-    for (let i = data.length - 1; i >= 0; i--) {
+function filterUpDecode(data: Uint8Array, prev: Uint8Array | null, out: Uint8Array): void {
+    if (!prev) {
+        out.set(data);
+        return;
+    }
+    for (let i = 0; i < data.length; i++) {
+        out[i] = (data[i] + prev[i]) & 0xff;
+    }
+}
+
+function filterAverageEncode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
+    for (let i = 0; i < data.length; i++) {
         const a = i >= sampleSize ? data[i - sampleSize] : 0;
         const b = prev ? prev[i] : 0;
-        result[i] = (data[i] - (((a + b) / 2) | 0)) & 0xff;
+        out[i] = (data[i] - (((a + b) / 2) | 0)) & 0xff;
     }
-    return result;
 }
 
-function filterAverageDecode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
+function filterAverageDecode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
     for (let i = 0; i < data.length; i++) {
-        const a = i >= sampleSize ? result[i - sampleSize] : 0;
+        const a = i >= sampleSize ? out[i - sampleSize] : 0;
         const b = prev ? prev[i] : 0;
-        result[i] = (result[i] + (((a + b) / 2) | 0)) & 0xff;
+        out[i] = (data[i] + (((a + b) / 2) | 0)) & 0xff;
     }
-    return result;
 }
 
 function paethPredictor(a: number, b: number, c: number): number {
@@ -263,56 +263,46 @@ function paethPredictor(a: number, b: number, c: number): number {
     return c;
 }
 
-function filterPaethEncode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
-    for (let i = data.length - 1; i >= 0; i--) {
+function filterPaethEncode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
+    for (let i = 0; i < data.length; i++) {
         const a = i >= sampleSize ? data[i - sampleSize] : 0;
         const b = prev ? prev[i] : 0;
         const c = (i >= sampleSize && prev) ? prev[i - sampleSize] : 0;
-        result[i] = (data[i] - paethPredictor(a, b, c)) & 0xff;
+        out[i] = (data[i] - paethPredictor(a, b, c)) & 0xff;
     }
-    return result;
 }
 
-function filterPaethDecode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const result = new Uint8Array(data);
+function filterPaethDecode(data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
     for (let i = 0; i < data.length; i++) {
-        const a = i >= sampleSize ? result[i - sampleSize] : 0;
+        const a = i >= sampleSize ? out[i - sampleSize] : 0;
         const b = prev ? prev[i] : 0;
         const c = (i >= sampleSize && prev) ? prev[i - sampleSize] : 0;
-        result[i] = (result[i] + paethPredictor(a, b, c)) & 0xff;
+        out[i] = (data[i] + paethPredictor(a, b, c)) & 0xff;
     }
-    return result;
 }
 
 export type FilterFunction = (data: Uint8Array, prev: Uint8Array | null, sampleSize: number) => Uint8Array;
 
-const ENCODE_FILTERS: Record<number, FilterFunction> = {
-    0: (data) => filterNoneEncode(data),
-    1: (data, _prev, sampleSize) => filterSubEncode(data, sampleSize),
-    2: (data, prev) => filterUpEncode(data, prev),
-    3: (data, prev, sampleSize) => filterAverageEncode(data, prev, sampleSize),
-    4: (data, prev, sampleSize) => filterPaethEncode(data, prev, sampleSize),
-};
-
-const DECODE_FILTERS: Record<number, FilterFunction> = {
-    0: (data) => filterNoneDecode(data),
-    1: (data, _prev, sampleSize) => filterSubDecode(data, sampleSize),
-    2: (data, prev) => filterUpDecode(data, prev),
-    3: (data, prev, sampleSize) => filterAverageDecode(data, prev, sampleSize),
-    4: (data, prev, sampleSize) => filterPaethDecode(data, prev, sampleSize),
-};
-
-export function decodeFilter(filterType: number, data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const fn = DECODE_FILTERS[filterType];
-    if (!fn) return new Uint8Array(data);
-    return fn(data, prev, sampleSize);
+export function decodeFilter(filterType: number, data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
+    switch (filterType) {
+        case 0: out.set(data); break;
+        case 1: filterSubDecode(data, sampleSize, out); break;
+        case 2: filterUpDecode(data, prev, out); break;
+        case 3: filterAverageDecode(data, prev, sampleSize, out); break;
+        case 4: filterPaethDecode(data, prev, sampleSize, out); break;
+        default: out.set(data); break;
+    }
 }
 
-export function encodeFilter(filterType: number, data: Uint8Array, prev: Uint8Array | null, sampleSize: number): Uint8Array {
-    const fn = ENCODE_FILTERS[filterType];
-    if (!fn) return new Uint8Array(data);
-    return fn(data, prev, sampleSize);
+export function encodeFilter(filterType: number, data: Uint8Array, prev: Uint8Array | null, sampleSize: number, out: Uint8Array): void {
+    switch (filterType) {
+        case 0: out.set(data); break;
+        case 1: filterSubEncode(data, sampleSize, out); break;
+        case 2: filterUpEncode(data, prev, out); break;
+        case 3: filterAverageEncode(data, prev, sampleSize, out); break;
+        case 4: filterPaethEncode(data, prev, sampleSize, out); break;
+        default: out.set(data); break;
+    }
 }
 
 export function reencodeWithFilter(
@@ -322,26 +312,34 @@ export function reencodeWithFilter(
     targetFilterType: number,
 ): Uint8Array {
     const result = new Uint8Array(filteredData.length);
-    let prevDecoded: Uint8Array | null = null;
+    const maxDataLength = Math.max(...scanlines.map(s => s.dataLength));
+    const decodedBuf = new Uint8Array(maxDataLength);
+    const prevBuf = new Uint8Array(maxDataLength);
+    const reencodedBuf = new Uint8Array(maxDataLength);
+
+    let hasPrev = false;
     let lastPass = -1;
 
     for (const scanline of scanlines) {
         if (scanline.passIndex !== undefined && scanline.passIndex !== lastPass) {
-            prevDecoded = null;
+            hasPrev = false;
             lastPass = scanline.passIndex;
         }
 
         const currentFilterType = filteredData[scanline.filterTypeOffset];
-        const currentData = filteredData.slice(scanline.dataStart, scanline.dataStart + scanline.dataLength);
+        const currentData = filteredData.subarray(scanline.dataStart, scanline.dataStart + scanline.dataLength);
+        const lineDecoded = decodedBuf.subarray(0, scanline.dataLength);
+        const linePrev = hasPrev ? prevBuf.subarray(0, scanline.dataLength) : null;
+        const lineReencoded = reencodedBuf.subarray(0, scanline.dataLength);
 
-        const decoded = decodeFilter(currentFilterType, currentData, prevDecoded, metadata.sampleSize);
-
-        const reencoded = encodeFilter(targetFilterType, decoded, prevDecoded, metadata.sampleSize);
+        decodeFilter(currentFilterType, currentData, linePrev, metadata.sampleSize, lineDecoded);
+        encodeFilter(targetFilterType, lineDecoded, linePrev, metadata.sampleSize, lineReencoded);
 
         result[scanline.filterTypeOffset] = targetFilterType;
-        result.set(reencoded, scanline.dataStart);
+        result.set(lineReencoded, scanline.dataStart);
 
-        prevDecoded = decoded;
+        prevBuf.set(lineDecoded);
+        hasPrev = true;
     }
 
     return result;
@@ -355,35 +353,41 @@ export function reencodeWithCustomFilter(
     scanlineRange?: { min: number; max: number },
 ): Uint8Array {
     const result = new Uint8Array(filteredData.length);
-    let prevDecoded: Uint8Array | null = null;
+    const maxDataLength = Math.max(...scanlines.map(s => s.dataLength));
+    const decodedBuf = new Uint8Array(maxDataLength);
+    const prevBuf = new Uint8Array(maxDataLength);
+
+    let hasPrev = false;
     let lastPass = -1;
 
     for (let i = 0; i < scanlines.length; i++) {
         const scanline = scanlines[i];
         if (scanline.passIndex !== undefined && scanline.passIndex !== lastPass) {
-            prevDecoded = null;
+            hasPrev = false;
             lastPass = scanline.passIndex;
         }
 
         const currentFilterType = filteredData[scanline.filterTypeOffset];
-        const currentData = filteredData.slice(scanline.dataStart, scanline.dataStart + scanline.dataLength);
+        const currentData = filteredData.subarray(scanline.dataStart, scanline.dataStart + scanline.dataLength);
+        const lineDecoded = decodedBuf.subarray(0, scanline.dataLength);
+        const linePrev = hasPrev ? prevBuf.subarray(0, scanline.dataLength) : null;
 
-        const decoded = decodeFilter(currentFilterType, currentData, prevDecoded, metadata.sampleSize);
+        decodeFilter(currentFilterType, currentData, linePrev, metadata.sampleSize, lineDecoded);
 
         const inRange = scanlineRange
             ? i >= scanlineRange.min && i <= scanlineRange.max
             : true;
 
+        result[scanline.filterTypeOffset] = currentFilterType;
         if (inRange) {
-            const reencoded = customEncoder(decoded, prevDecoded, metadata.sampleSize);
-            result[scanline.filterTypeOffset] = currentFilterType;
+            const reencoded = customEncoder(lineDecoded, linePrev, metadata.sampleSize);
             result.set(reencoded, scanline.dataStart);
         } else {
-            result[scanline.filterTypeOffset] = currentFilterType;
             result.set(currentData, scanline.dataStart);
         }
 
-        prevDecoded = decoded;
+        prevBuf.set(lineDecoded);
+        hasPrev = true;
     }
 
     return result;

@@ -137,13 +137,7 @@ export class BufferManager {
 
         const results = await Promise.allSettled(
             this._buffers.map(async (buffer) => {
-                const frameCanvas = await this._generateGlitchFrame();
-                if (this._invalidateGeneration !== generation) return;
-                buffer.canvas.width = this._imageWidth;
-                buffer.canvas.height = this._imageHeight;
-                const ctx = buffer.canvas.getContext('2d')!;
-                ctx.drawImage(frameCanvas, 0, 0);
-                buffer.playCount = 0;
+                await this._fillGlitchFrame(buffer, generation);
             }),
         );
 
@@ -222,14 +216,16 @@ export class BufferManager {
                 continue;
             }
 
-            const frameCanvas = await this._generateGlitchFrame();
-            const ctx = target.canvas.getContext('2d')!;
-            ctx.clearRect(0, 0, target.canvas.width, target.canvas.height);
-            ctx.drawImage(frameCanvas, 0, 0);
-            target.playCount = 0;
+            try {
+                await this._fillGlitchFrame(target, this._invalidateGeneration);
+                target.playCount = 0;
+            } catch (err) {
+                if (err instanceof Error && err.message === 'superseded') break;
+                console.warn('Background frame generation failed:', err);
+            }
 
             await new Promise<void>((resolve) => {
-                setTimeout(resolve, 0);
+                setTimeout(resolve, 10); // Small breathing room
             });
         }
     }
@@ -283,7 +279,7 @@ export class BufferManager {
         return entries[Math.floor(Math.random() * entries.length)];
     }
 
-    private async _generateGlitchFrame(): Promise<HTMLCanvasElement> {
+    private async _fillGlitchFrame(buffer: Buffer, generation: number): Promise<void> {
         const entry = this._pickActiveDomain();
         if (!entry) throw new Error('No active domain');
 
@@ -294,35 +290,52 @@ export class BufferManager {
         }
 
         const resultBytes = await domain.generateFrame(state, glitches);
-
-        const blob = new Blob([resultBytes.buffer as ArrayBuffer], { type: domain.mimeType });
-        const url = URL.createObjectURL(blob);
-
-        const img = new Image();
-        const loaded = await new Promise<boolean>((resolve) => {
-            img.onload = () => resolve(true);
-            img.onerror = () => resolve(false);
-            img.src = url;
-        });
-        URL.revokeObjectURL(url);
-
-        const canvas = document.createElement('canvas');
-        canvas.width = this._imageWidth;
-        canvas.height = this._imageHeight;
-
-        if (loaded) {
-            const ctx = canvas.getContext('2d')!;
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-        } else {
-            const glitchSummary = glitches.map(g =>
-                `${g.type}@${g.targetPool}(pos=${g.position.value.toFixed(1)})`
-            ).join(', ');
-            console.warn(
-                `[BufferManager] Decode failed: domain=${domain.id}, ` +
-                `${glitchSummary}, bytes=${resultBytes.length}`
-            );
+        if (this._invalidateGeneration !== generation) {
+            throw new Error('superseded');
         }
 
-        return canvas;
+        const blob = new Blob([resultBytes.buffer as ArrayBuffer], { type: domain.mimeType });
+        
+        let bitmap: ImageBitmap | null = null;
+        try {
+            if (typeof createImageBitmap !== 'undefined') {
+                bitmap = await createImageBitmap(blob);
+            }
+        } catch (e) {
+            // Ignore and fallback to Image
+        }
+
+        if (this._invalidateGeneration !== generation) {
+            bitmap?.close();
+            throw new Error('superseded');
+        }
+
+        const ctx = buffer.canvas.getContext('2d')!;
+        ctx.clearRect(0, 0, this._imageWidth, this._imageHeight);
+
+        if (bitmap) {
+            ctx.drawImage(bitmap, 0, 0, this._imageWidth, this._imageHeight);
+            bitmap.close();
+        } else {
+            // Fallback to Image
+            const url = URL.createObjectURL(blob);
+            const img = new Image();
+            const loaded = await new Promise<boolean>((resolve) => {
+                img.onload = () => resolve(true);
+                img.onerror = () => resolve(false);
+                img.src = url;
+            });
+            URL.revokeObjectURL(url);
+
+            if (this._invalidateGeneration !== generation) {
+                throw new Error('superseded');
+            }
+
+            if (loaded) {
+                ctx.drawImage(img, 0, 0, this._imageWidth, this._imageHeight);
+            } else {
+                console.warn(`[BufferManager] Decode failed: domain=${domain.id}, bytes=${resultBytes.length}`);
+            }
+        }
     }
 }

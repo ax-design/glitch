@@ -19,7 +19,7 @@ export class CompressedTransposeGlitch extends PngGlitch {
         const segmentStart = 2 + Math.floor(payloadLength * 0.2);
         const segmentEnd = Math.max(segmentStart + 1, 2 + Math.floor(payloadLength * 0.9));
 
-        const data = bytes.slice(segmentStart, segmentEnd);
+        const data = bytes.subarray(segmentStart, segmentEnd);
 
         const n = Math.min(this.chunkCount, data.length);
         if (n <= 1) return;
