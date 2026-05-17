@@ -1,4 +1,4 @@
-import { unzlibSync, zlibSync } from 'fflate';
+import { unzlibSync } from 'fflate';
 
 export interface ScanlineInfo {
     filterTypeOffset: number;
@@ -130,11 +130,6 @@ export function parsePngChunks(bytes: Uint8Array): PngChunkLayout {
 
 export async function inflateCompressed(data: Uint8Array): Promise<Uint8Array> {
     return unzlibSync(data);
-}
-
-export async function deflateFiltered(data: Uint8Array): Promise<Uint8Array> {
-    // Level 0 (no compression) is much faster and reduces CPU usage significantly for animations.
-    return zlibSync(data, { level: 0 });
 }
 
 export function computeScanlines(filteredData: Uint8Array, metadata: PngMetadata): ScanlineInfo[] {
@@ -393,18 +388,133 @@ export function reencodeWithCustomFilter(
     return result;
 }
 
+export function unfilterToRgba(filteredData: Uint8Array, scanlines: ScanlineInfo[], metadata: PngMetadata): Uint8ClampedArray {
+    const { width, height, sampleSize, colorType } = metadata;
+    const rgba = new Uint8ClampedArray(width * height * 4);
+    const bytesPerRow = width * sampleSize;
+    const decodedBuf = new Uint8Array(bytesPerRow);
+    const prevBuf = new Uint8Array(bytesPerRow);
+    
+    let hasPrev = false;
+    let lastPass = -1;
+    let rowIdx = 0;
+
+    for (const scanline of scanlines) {
+        if (scanline.passIndex !== undefined && scanline.passIndex !== lastPass) {
+            hasPrev = false;
+            lastPass = scanline.passIndex;
+        }
+
+        const filterType = filteredData[scanline.filterTypeOffset];
+        const currentData = filteredData.subarray(scanline.dataStart, scanline.dataStart + scanline.dataLength);
+        const linePrev = hasPrev ? prevBuf : null;
+
+        decodeFilter(filterType, currentData, linePrev, sampleSize, decodedBuf);
+
+        // Map decoded line to RGBA
+        // Note: For interlaced PNGs, this simple mapping is WRONG.
+        // We only support non-interlaced for fast path for now.
+        if (!metadata.interlaced) {
+            const outOffset = rowIdx * width * 4;
+            if (colorType === 6) { // RGBA
+                rgba.set(decodedBuf, outOffset);
+            } else if (colorType === 2) { // RGB
+                for (let x = 0; x < width; x++) {
+                    const src = x * 3;
+                    const dst = outOffset + x * 4;
+                    rgba[dst] = decodedBuf[src];
+                    rgba[dst + 1] = decodedBuf[src + 1];
+                    rgba[dst + 2] = decodedBuf[src + 2];
+                    rgba[dst + 3] = 255;
+                }
+            } else if (colorType === 0) { // Grayscale
+                for (let x = 0; x < width; x++) {
+                    const v = decodedBuf[x];
+                    const dst = outOffset + x * 4;
+                    rgba[dst] = v;
+                    rgba[dst + 1] = v;
+                    rgba[dst + 2] = v;
+                    rgba[dst + 3] = 255;
+                }
+            } else if (colorType === 4) { // Grayscale + Alpha
+                for (let x = 0; x < width; x++) {
+                    const v = decodedBuf[x * 2];
+                    const a = decodedBuf[x * 2 + 1];
+                    const dst = outOffset + x * 4;
+                    rgba[dst] = v;
+                    rgba[dst + 1] = v;
+                    rgba[dst + 2] = v;
+                    rgba[dst + 3] = a;
+                }
+            }
+            rowIdx++;
+        }
+
+        prevBuf.set(decodedBuf);
+        hasPrev = true;
+    }
+
+    return rgba;
+}
+
 export function computeAdler32(data: Uint8Array): number {
     let s1 = 1;
     let s2 = 0;
-    for (let i = 0; i < data.length; i++) {
-        s1 = (s1 + data[i]) % 65521;
-        s2 = (s2 + s1) % 65521;
+    let i = 0;
+    const len = data.length;
+    
+    while (i < len) {
+        // We can process up to 5552 bytes before s2 might overflow 32-bit uint
+        const step = Math.min(len - i, 5552);
+        for (let j = 0; j < step; j++) {
+            s1 += data[i++];
+            s2 += s1;
+        }
+        s1 %= 65521;
+        s2 %= 65521;
     }
     return ((s2 << 16) | s1) >>> 0;
 }
 
+export function fastDeflateLevel0(data: Uint8Array): Uint8Array {
+    const adler = computeAdler32(data);
+    const numBlocks = Math.ceil(data.length / 65535) || 1;
+    const resultSize = 2 + (numBlocks * 5) + data.length + 4;
+    const result = new Uint8Array(resultSize);
+
+    // ZLIB Header: CM=8 (deflate), CINFO=7 (32K window), FCHECK (level 0, no dict)
+    result[0] = 0x78;
+    result[1] = 0x01;
+
+    let readPos = 0;
+    let writePos = 2;
+
+    for (let i = 0; i < numBlocks; i++) {
+        const isLast = i === numBlocks - 1;
+        const len = Math.min(data.length - readPos, 65535);
+        
+        result[writePos++] = isLast ? 0x01 : 0x00; // BFINAL, BTYPE=00 (stored)
+        result[writePos++] = len & 0xff;
+        result[writePos++] = (len >>> 8) & 0xff;
+        result[writePos++] = (~len) & 0xff;
+        result[writePos++] = ((~len) >>> 8) & 0xff;
+
+        result.set(data.subarray(readPos, readPos + len), writePos);
+        writePos += len;
+        readPos += len;
+    }
+
+    // Adler32 (big-endian)
+    result[writePos++] = (adler >>> 24) & 0xff;
+    result[writePos++] = (adler >>> 16) & 0xff;
+    result[writePos++] = (adler >>> 8) & 0xff;
+    result[writePos++] = adler & 0xff;
+
+    return result;
+}
+
 export async function rebuildPng(filteredData: Uint8Array, metadata: PngMetadata): Promise<Uint8Array> {
-    const compressed = await deflateFiltered(filteredData);
+    const compressed = fastDeflateLevel0(filteredData);
     return assemblePng(compressed, metadata);
 }
 

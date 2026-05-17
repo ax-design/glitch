@@ -289,53 +289,60 @@ export class BufferManager {
             this.randomizeGlitchParams(glitches);
         }
 
-        const resultBytes = await domain.generateFrame(state, glitches);
+        const result = await domain.generateFrame(state, glitches);
         if (this._invalidateGeneration !== generation) {
             throw new Error('superseded');
         }
 
-        const blob = new Blob([resultBytes.buffer as ArrayBuffer], { type: domain.mimeType });
-        
-        let bitmap: ImageBitmap | null = null;
-        try {
-            if (typeof createImageBitmap !== 'undefined') {
-                bitmap = await createImageBitmap(blob);
+        const resultBytes = result instanceof Uint8Array ? result : result.bytes;
+        let bitmap: ImageBitmap | HTMLCanvasElement | HTMLVideoElement | OffscreenCanvas | HTMLImageElement | null = 
+            result instanceof Uint8Array ? null : (result.bitmap ?? null);
+
+        if (!bitmap) {
+            const blob = new Blob([resultBytes.buffer as ArrayBuffer], { type: domain.mimeType });
+            
+            try {
+                if (typeof createImageBitmap !== 'undefined') {
+                    bitmap = await createImageBitmap(blob);
+                }
+            } catch (e) {
+                // Ignore and fallback to Image
             }
-        } catch (e) {
-            // Ignore and fallback to Image
-        }
 
-        if (this._invalidateGeneration !== generation) {
-            bitmap?.close();
-            throw new Error('superseded');
+            if (this._invalidateGeneration !== generation) {
+                if (bitmap && 'close' in bitmap) (bitmap as ImageBitmap).close();
+                throw new Error('superseded');
+            }
+
+            if (!bitmap) {
+                // Fallback to Image
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+                const loaded = await new Promise<boolean>((resolve) => {
+                    img.onload = () => resolve(true);
+                    img.onerror = () => resolve(false);
+                    img.src = url;
+                });
+                URL.revokeObjectURL(url);
+
+                if (this._invalidateGeneration !== generation) {
+                    throw new Error('superseded');
+                }
+
+                if (loaded) {
+                    bitmap = img;
+                } else {
+                    console.warn(`[BufferManager] Decode failed: domain=${domain.id}, bytes=${resultBytes.length}`);
+                }
+            }
         }
 
         const ctx = buffer.canvas.getContext('2d')!;
         ctx.clearRect(0, 0, this._imageWidth, this._imageHeight);
 
         if (bitmap) {
-            ctx.drawImage(bitmap, 0, 0, this._imageWidth, this._imageHeight);
-            bitmap.close();
-        } else {
-            // Fallback to Image
-            const url = URL.createObjectURL(blob);
-            const img = new Image();
-            const loaded = await new Promise<boolean>((resolve) => {
-                img.onload = () => resolve(true);
-                img.onerror = () => resolve(false);
-                img.src = url;
-            });
-            URL.revokeObjectURL(url);
-
-            if (this._invalidateGeneration !== generation) {
-                throw new Error('superseded');
-            }
-
-            if (loaded) {
-                ctx.drawImage(img, 0, 0, this._imageWidth, this._imageHeight);
-            } else {
-                console.warn(`[BufferManager] Decode failed: domain=${domain.id}, bytes=${resultBytes.length}`);
-            }
+            ctx.drawImage(bitmap as CanvasImageSource, 0, 0, this._imageWidth, this._imageHeight);
+            if ('close' in bitmap) (bitmap as ImageBitmap).close();
         }
     }
 }

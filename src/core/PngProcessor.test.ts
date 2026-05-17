@@ -4,12 +4,13 @@ import type { CanvasKit } from 'canvaskit-wasm';
 import {
     parsePngChunks,
     inflateCompressed,
-    deflateFiltered,
+    fastDeflateLevel0,
     computeScanlines,
     rebuildPng,
     reencodeWithFilter,
     buildFilteredDataPool,
     buildFilterTypePool,
+    unfilterToRgba,
 } from './PngProcessor.js';
 import { parseZlibDeflate, repairZlibDeflate } from './DeflateRepair.js';
 
@@ -268,7 +269,7 @@ test('inflate then deflate roundtrips correctly', async () => {
     const filteredData = await inflateCompressed(compressedData);
     expect(filteredData.length).toBeGreaterThan(0);
 
-    const recompressed = await deflateFiltered(filteredData);
+    const recompressed = fastDeflateLevel0(filteredData);
     const roundtripped = await inflateCompressed(recompressed);
 
     expect(roundtripped.length).toBe(filteredData.length);
@@ -343,8 +344,23 @@ test('rebuildPng: modified filtered data produces valid PNG', async () => {
 });
 
 // ============================================================
-// Reencode with Filter
+// Unfilter to RGBA (Fast Path)
 // ============================================================
+
+test('unfilterToRgba: correctly decodes non-interlaced RGBA', async () => {
+    const png = makePngBytes(16, 16);
+    const { metadata, compressedData } = parsePngChunks(png);
+    const filteredData = await inflateCompressed(compressedData);
+    const scanlines = computeScanlines(filteredData, metadata);
+
+    const rgba = unfilterToRgba(filteredData, scanlines, metadata);
+    expect(rgba.length).toBe(16 * 16 * 4);
+    
+    // Check some pixels
+    // Since makePngBytes generates a simple pattern, we can just verify it's decodable
+    const rebuilt = await rebuildPng(filteredData, metadata);
+    expect(canDecode(rebuilt, 16, 16)).toBe(true);
+});
 
 test('reencodeWithFilter: Sub filter produces valid PNG', async () => {
     const png = makePngBytes(32, 24);

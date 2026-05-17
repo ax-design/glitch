@@ -5,6 +5,7 @@ import { parsePngChunks, assemblePng } from '../core/PngProcessor.js';
 import { parseZlibDeflate } from '../core/DeflateRepair.js';
 import { PngDomain } from './PngDomain.js';
 import type { PngDomainState } from './PngDomain.js';
+import type { FrameResult } from './types.js';
 import { FilterDataGlitch } from '../glitch/png/FilterDataGlitch.js';
 import { TransposeGlitch } from '../glitch/png/TransposeGlitch.js';
 import { DefectGlitch } from '../glitch/png/DefectGlitch.js';
@@ -76,6 +77,10 @@ function canDecode(bytes: Uint8Array, width: number, height: number): boolean {
 
 function isPngSignature(bytes: Uint8Array): boolean {
     return bytes[0] === 137 && bytes[1] === 80 && bytes[2] === 78 && bytes[3] === 71;
+}
+
+function getResultBytes(result: Uint8Array | FrameResult): Uint8Array {
+    return result instanceof Uint8Array ? result : result.bytes;
 }
 
 function assertValidCompressedPng(result: Uint8Array, width: number, height: number, expectedFilteredLength: number): void {
@@ -179,7 +184,7 @@ for (const ft of FILTER_TYPES) {
 
         for (let run = 0; run < FUZZ_RUNS; run++) {
             const glitch = makeReplaceGlitch(50);
-            const result = await domain.generateFrame(state, [glitch]);
+            const result = getResultBytes(await domain.generateFrame(state, [glitch]));
             expect(isPngSignature(result)).toBe(true);
             expect(result.length).toBeGreaterThan(0);
         }
@@ -192,7 +197,7 @@ for (const ft of FILTER_TYPES) {
 
         for (let run = 0; run < FUZZ_RUNS; run++) {
             const glitch = new TransposeGlitch(4);
-            const result = await domain.generateFrame(state, [glitch]);
+            const result = getResultBytes(await domain.generateFrame(state, [glitch]));
             expect(isPngSignature(result)).toBe(true);
             expect(result.length).toBeGreaterThan(0);
         }
@@ -205,7 +210,7 @@ for (const ft of FILTER_TYPES) {
 
         for (let run = 0; run < FUZZ_RUNS; run++) {
             const glitch = makeDefectGlitch(10);
-            const result = await domain.generateFrame(state, [glitch]);
+            const result = getResultBytes(await domain.generateFrame(state, [glitch]));
             expect(isPngSignature(result)).toBe(true);
             expect(result.length).toBeGreaterThan(0);
         }
@@ -233,7 +238,7 @@ test('Compressed Replace: fuzz 20 runs', async () => {
 
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = makeCompressedReplaceGlitch(10);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
 });
@@ -248,7 +253,7 @@ test('Compressed Transpose: fuzz 20 runs', async () => {
 
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = new CompressedTransposeGlitch(4);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
 });
@@ -263,7 +268,7 @@ test('Compressed Defect: fuzz 20 runs', async () => {
 
     for (let run = 0; run < FUZZ_RUNS; run++) {
         const glitch = makeCompressedDefectGlitch(5);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
 });
@@ -278,7 +283,7 @@ test('Compressed Replace: produces non-trivial filtered-data change across repea
     let changedRuns = 0;
     for (let run = 0; run < 8; run++) {
         const glitch = makeCompressedReplaceGlitch(10);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, state.filteredData.length);
         const { compressedData } = parsePngChunks(result);
         const parsed = parseZlibDeflate(compressedData);
@@ -301,7 +306,7 @@ test('Compressed Defect: produces non-trivial filtered-data change across repeat
     let changedRuns = 0;
     for (let run = 0; run < 8; run++) {
         const glitch = makeCompressedDefectGlitch(5);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, state.filteredData.length);
         const { compressedData } = parsePngChunks(result);
         const parsed = parseZlibDeflate(compressedData);
@@ -324,7 +329,7 @@ test('Compressed Transpose: produces non-trivial filtered-data change across rep
     let changedRuns = 0;
     for (let run = 0; run < 8; run++) {
         const glitch = new CompressedTransposeGlitch(4);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, state.filteredData.length);
         const { compressedData } = parsePngChunks(result);
         const parsed = parseZlibDeflate(compressedData);
@@ -347,7 +352,7 @@ test('Compressed Replace stress: 100 runs stay decodable', async () => {
 
     for (let run = 0; run < 100; run++) {
         const glitch = makeCompressedReplaceGlitch(20);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
 });
@@ -362,7 +367,7 @@ test('Compressed Transpose stress: 100 runs stay decodable', async () => {
 
     for (let run = 0; run < 100; run++) {
         const glitch = new CompressedTransposeGlitch(6);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         assertValidCompressedPng(result, width, height, expectedFilteredLength);
     }
 });
@@ -376,7 +381,7 @@ for (const graftValue of [0, 1, 2, 3, 4]) {
         for (let run = 0; run < FUZZ_RUNS; run++) {
             const density = new DensityValue(1.0, { min: graftValue, max: graftValue });
             const glitch = new GraftGlitch(new Position(0), density);
-            const result = await domain.generateFrame(state, [glitch]);
+            const result = getResultBytes(await domain.generateFrame(state, [glitch]));
             expect(isPngSignature(result)).toBe(true);
             expect(canDecode(result, 64, 48)).toBe(true);
         }
@@ -401,7 +406,7 @@ test('CustomFilterGlitch (XOR encoder): fuzz 20 runs', async () => {
             return result;
         };
         const glitch = new CustomFilterGlitch(customEncoder);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         expect(isPngSignature(result)).toBe(true);
         expect(canDecode(result, 64, 48)).toBe(true);
     }
@@ -423,7 +428,7 @@ test('CustomFilterGlitch (reversed reference): fuzz 20 runs', async () => {
             return result;
         };
         const glitch = new CustomFilterGlitch(customEncoder);
-        const result = await domain.generateFrame(state, [glitch]);
+        const result = getResultBytes(await domain.generateFrame(state, [glitch]));
         expect(isPngSignature(result)).toBe(true);
         expect(canDecode(result, 64, 48)).toBe(true);
     }
@@ -447,6 +452,6 @@ test('generateFrame with no glitches returns original bytes', async () => {
     const png = makePngBytes(32, 24);
     const state = await prepareState(png);
     const domain = new PngDomain();
-    const result = await domain.generateFrame(state, []);
+    const result = getResultBytes(await domain.generateFrame(state, []));
     expect(result).toEqual(png);
 });

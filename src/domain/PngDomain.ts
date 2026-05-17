@@ -1,4 +1,4 @@
-import type { DomainAnalysis, DomainState, GlitchDomain } from './types.js';
+import type { DomainAnalysis, DomainState, GlitchDomain, FrameResult } from './types.js';
 import type { BaseGlitch } from '../glitch/BaseGlitch.js';
 import { base64ToBytes } from '../core/JpegBytes.js';
 import {
@@ -11,6 +11,7 @@ import {
     assemblePng,
     buildFilteredDataPool,
     buildFilterTypePool,
+    unfilterToRgba,
 } from '../core/PngProcessor.js';
 import type { ScanlineInfo, PngMetadata } from '../core/PngProcessor.js';
 import {
@@ -78,7 +79,7 @@ export class PngDomain implements GlitchDomain {
         return { originalBytes: bytes, analysis, filteredData, compressedData, scanlines, metadata, compressedTrace };
     }
 
-    async generateFrame(state: DomainState, glitches: BaseGlitch[]): Promise<Uint8Array> {
+    async generateFrame(state: DomainState, glitches: BaseGlitch[]): Promise<Uint8Array | FrameResult> {
         const pngState = state as PngDomainState;
 
         if (glitches.length === 0) {
@@ -146,7 +147,7 @@ export class PngDomain implements GlitchDomain {
         compressedGlitches: BaseGlitch[],
         filteredGlitches: BaseGlitch[],
         customFilterGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch | null,
-    ): Promise<Uint8Array> {
+    ): Promise<Uint8Array | FrameResult> {
         let candidateCompressed = new Uint8Array(pngState.compressedData);
         const compressedPool = pngState.analysis.compressedData;
 
@@ -192,12 +193,12 @@ export class PngDomain implements GlitchDomain {
                 customFilterGlitch.scanlineRange,
             );
             reencoded = this._applyFilteredGlitchesToBytes(pngState, reencoded, filteredGlitches);
-            return rebuildPng(reencoded, pngState.metadata);
+            return this._finalizeFrame(pngState, reencoded);
         }
 
         if (filteredGlitches.length > 0) {
             const filteredData = this._applyFilteredGlitchesToBytes(pngState, new Uint8Array(baseFilteredData), filteredGlitches);
-            return rebuildPng(filteredData, pngState.metadata);
+            return this._finalizeFrame(pngState, filteredData);
         }
 
         if (repairedCompressedData) {
@@ -205,7 +206,7 @@ export class PngDomain implements GlitchDomain {
         }
 
         if (hasCompressedEffect) {
-            return rebuildPng(baseFilteredData, pngState.metadata);
+            return this._finalizeFrame(pngState, baseFilteredData);
         }
 
         return new Uint8Array(pngState.originalBytes);
@@ -276,16 +277,31 @@ export class PngDomain implements GlitchDomain {
         return { filteredData: next, patchedFilterBytes, changedBytes };
     }
 
-    private async _applyFilteredGlitches(pngState: PngDomainState, glitches: BaseGlitch[]): Promise<Uint8Array> {
+    private async _applyFilteredGlitches(pngState: PngDomainState, glitches: BaseGlitch[]): Promise<Uint8Array | FrameResult> {
         const filteredData = this._applyFilteredGlitchesToBytes(pngState, new Uint8Array(pngState.filteredData), glitches);
-        return rebuildPng(filteredData, pngState.metadata);
+        return this._finalizeFrame(pngState, filteredData);
+    }
+
+    private async _finalizeFrame(pngState: PngDomainState, filteredData: Uint8Array): Promise<Uint8Array | FrameResult> {
+        // Fast path: if not interlaced, unfilter directly and return bitmap
+        if (!pngState.metadata.interlaced && typeof createImageBitmap !== 'undefined') {
+            const rgba = unfilterToRgba(filteredData, pngState.scanlines, pngState.metadata);
+            const imageData = new ImageData(pngState.metadata.width, pngState.metadata.height);
+            imageData.data.set(rgba);
+            const bitmap = await createImageBitmap(imageData);
+            const bytes = await rebuildPng(filteredData, pngState.metadata);
+            return { bytes, bitmap };
+        }
+
+        const bytes = await rebuildPng(filteredData, pngState.metadata);
+        return bytes;
     }
 
     private async _applyCustomFilterGlitch(
         pngState: PngDomainState,
         customGlitch: import('../glitch/png/CustomFilterGlitch.js').CustomFilterGlitch,
         otherGlitches: BaseGlitch[],
-    ): Promise<Uint8Array> {
+    ): Promise<Uint8Array | FrameResult> {
         let reencoded = reencodeWithCustomFilter(
             new Uint8Array(pngState.filteredData),
             pngState.scanlines,
@@ -294,6 +310,6 @@ export class PngDomain implements GlitchDomain {
             customGlitch.scanlineRange,
         );
         reencoded = this._applyFilteredGlitchesToBytes(pngState, reencoded, otherGlitches.filter((glitch) => glitch !== customGlitch));
-        return rebuildPng(reencoded, pngState.metadata);
+        return this._finalizeFrame(pngState, reencoded);
     }
 }
