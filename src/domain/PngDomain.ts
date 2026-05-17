@@ -283,8 +283,10 @@ export class PngDomain implements GlitchDomain {
     }
 
     private async _finalizeFrame(pngState: PngDomainState, filteredData: Uint8Array): Promise<Uint8Array | FrameResult> {
-        // Fast path: if not interlaced, unfilter directly and return bitmap
-        if (!pngState.metadata.interlaced && typeof createImageBitmap !== 'undefined') {
+        // Fast path: if not interlaced and supported color type/bit depth, unfilter directly and return bitmap
+        const supportedColorType = [0, 2, 4, 6].includes(pngState.metadata.colorType);
+        const supportedBitDepth = pngState.metadata.bitDepth === 8;
+        if (!pngState.metadata.interlaced && supportedColorType && supportedBitDepth && typeof createImageBitmap !== 'undefined') {
             const rgba = unfilterToRgba(filteredData, pngState.scanlines, pngState.metadata);
             const imageData = new ImageData(pngState.metadata.width, pngState.metadata.height);
             imageData.data.set(rgba);
