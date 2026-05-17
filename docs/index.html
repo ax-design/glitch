@@ -210,6 +210,21 @@ glitchCanvas.bufferSize = 6;</pre>
         </div>
     </div>
 
+    <h3>3d. <code>refresh-on</code></h3>
+    <div class="demo-block">
+        <div class="demo">
+            <glitch-canvas id="demo-refresh" src="example.jpg" refresh-on="click enter" buffer-size="1"></glitch-canvas>
+            <p style="text-align:center;margin:4px 0 0;font-size:12px;color:#666">Click or hover to randomize</p>
+        </div>
+        <div class="code">
+            <p>Specify pointer events to trigger <code>randomize()</code>. The action is ignored if an animation is currently playing. Supports multiple events separated by space. <code>enter</code> is mapped to <code>pointerenter</code>.</p>
+<pre>&lt;glitch-canvas
+  src="example.jpg"
+  refresh-on="click enter"&gt;
+&lt;/glitch-canvas&gt;</pre>
+        </div>
+    </div>
+
     <!-- ============================================================ -->
     <h2>4. Domain Management</h2>
     <p>Glitch Canvas uses <strong>domains</strong> to manage glitch types. Each domain is an independent instance, you can add multiple PNG or JPEG domains with different settings. Call <code>addDomain()</code> to create a domain handle, then add glitches to it.</p>
@@ -805,7 +820,8 @@ fps              number   Playback frame rate (default: 8)
 buffer-size      number   Number of internal frame buffers (default: 4)
 autoplay         boolean  Auto-play after image loads
 object-fit       string   How image fits container (default: fill)
-object-position  string   Image alignment (default: 50% 50%)</pre>
+object-position  string   Image alignment (default: 50% 50%)
+refresh-on       string   Pointer events to trigger randomize() (e.g. "click enter")</pre>
 
     <h3>GlitchCanvas Methods</h3>
 <pre>play()                                              Start playback
@@ -827,7 +843,8 @@ bufferSize      number                Buffer count
 src             string                Image URL
 autoplay        boolean               Auto-play on load
 objectFit       string                How image fits container
-objectPosition  string                Image alignment</pre>
+objectPosition  string                Image alignment
+refreshOn       string                Pointer events to trigger randomize()</pre>
 
     <h3>DomainHandle Methods</h3>
 <pre>addGlitch(glitch: BaseGlitch): void                Add a glitch to this domain

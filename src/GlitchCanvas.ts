@@ -45,7 +45,7 @@ export class GlitchCanvas extends HTMLElement {
     private _initObserver: IntersectionObserver | null = null;
 
     static get observedAttributes(): string[] {
-        return ['src', 'fps', 'buffer-size', 'autoplay', 'object-fit', 'object-position'];
+        return ['src', 'fps', 'buffer-size', 'autoplay', 'object-fit', 'object-position', 'refresh-on'];
     }
 
     constructor() {
@@ -73,9 +73,33 @@ export class GlitchCanvas extends HTMLElement {
         this._bufferManager = new BufferManager(4);
     }
 
+    private _refreshOn = '';
+    private _boundRefreshHandler = (e: Event) => {
+        if (!this._playing) {
+            this.randomize();
+        }
+    };
+
+    private _updateRefreshListeners(oldVal: string, newVal: string): void {
+        const oldEvents = oldVal.split(/\s+/).filter(Boolean);
+        const newEvents = newVal.split(/\s+/).filter(Boolean);
+
+        for (const ev of oldEvents) {
+            const mapped = ev === 'enter' ? 'pointerenter' : ev;
+            this.removeEventListener(mapped, this._boundRefreshHandler);
+        }
+        for (const ev of newEvents) {
+            const mapped = ev === 'enter' ? 'pointerenter' : ev;
+            this.addEventListener(mapped, this._boundRefreshHandler);
+        }
+    }
+
     connectedCallback(): void {
         if (this._src) {
             this.load(this._src);
+        }
+        if (this._refreshOn) {
+            this._updateRefreshListeners('', this._refreshOn);
         }
     }
 
@@ -84,6 +108,9 @@ export class GlitchCanvas extends HTMLElement {
         if (this._initObserver) {
             this._initObserver.disconnect();
             this._initObserver = null;
+        }
+        if (this._refreshOn) {
+            this._updateRefreshListeners(this._refreshOn, '');
         }
     }
 
@@ -116,10 +143,24 @@ export class GlitchCanvas extends HTMLElement {
             case 'object-position':
                 this._canvas.style.objectPosition = newVal;
                 break;
+            case 'refresh-on':
+                if (this.isConnected) {
+                    this._updateRefreshListeners(oldVal || '', newVal || '');
+                }
+                this._refreshOn = newVal || '';
+                break;
         }
     }
 
     // --- Attributes ---
+
+    get refreshOn(): string {
+        return this._refreshOn;
+    }
+
+    set refreshOn(val: string) {
+        this.setAttribute('refresh-on', val);
+    }
 
     get src(): string {
         return this.getAttribute('src') ?? '';
